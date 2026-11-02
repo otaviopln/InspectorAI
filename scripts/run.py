@@ -1,23 +1,52 @@
-"""Entry point for running Inspector AI interactively."""
+"""Entry point for running Inspector AI interactively (CLI).
+
+Loads the trained InspectorTransformer and the from-scratch BPE tokenizer,
+then runs an interactive terminal loop:
+
+  You:    <types an idea / prompt>
+  Inspector:  <encoded -> Transformer -> decoded response>
+
+The model output will naturally be either:
+  * strategic clarification questions  (if the input was dubious / vague), or
+  * a strict R.C.F.O formatted prompt  (if the input was clear enough).
+
+No HuggingFace, no sentencepiece — everything is built from torch primitives
+and the custom tokenizer trained in previous sessions.
+"""
+
+from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-# Allow running from scripts/ directory
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+SCRIPTS_DIR = ROOT / "scripts"
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
 
-from inspector.core.analyzer import PromptAnalyzer
-from inspector.core.formatter import RCFOFormatter
-from inspector.core.questioner import QuestionGenerator
+from inspector import load_components, generate_response  # noqa: E402
 
 
 def main() -> None:
-    analyzer = PromptAnalyzer()
-    formatter = RCFOFormatter()
-    questioner = QuestionGenerator()
+    """Interactive terminal entry point."""
+    print("=" * 60)
+    print("  Inspector AI — Interactive Terminal")
+    print("=" * 60)
+    print("Type your idea below. Inspector will respond with either")
+    print("strategic clarification questions (dubious input) or a strict")
+    print("R.C.F.O formatted prompt (clear input).")
+    print("Type 'quit', 'exit', or 'q' to leave.\n")
 
-    print("Inspector AI — enter a prompt (type 'quit' to exit):\n")
+    try:
+        tokenizer, model = load_components()
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}")
+        print("\nRun 'python scripts/train.py' first to train the model.")
+        return
+
+    print("-" * 60)
+    print("Ready. Awaiting your input...\n")
+
     while True:
         try:
             user_input = input("> ").strip()
@@ -31,18 +60,8 @@ def main() -> None:
         if not user_input:
             continue
 
-        classification = analyzer.classify(user_input)
-        if classification == "dubious":
-            questions = questioner.generate(user_input)
-            print("\nInspector: Your input is a bit unclear. Could you clarify?")
-            for i, q in enumerate(questions, 1):
-                print(f"  {i}. {q}")
-        else:
-            rcfo = formatter.format(user_input)
-            print("\nInspector: R.C.F.O formatted input:")
-            print(rcfo)
-
-        print()
+        response = generate_response(model, tokenizer, user_input)
+        print(f"\nInspector: {response}\n")
 
 
 if __name__ == "__main__":

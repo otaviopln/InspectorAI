@@ -36,10 +36,10 @@ TOKENIZER_PATH = ROOT / "inspector" / "models" / "tokenizer_vocab.json"
 # Inference hyperparameters (fallback defaults; overridden by state_dict)
 # Valores de fallback para checkpoints antigos.
 # Checkpoints novos usam a configuração salva durante o treinamento.
-D_MODEL = 32
-NUM_HEADS = 8
-NUM_LAYERS = 1
-D_FF = 128
+D_MODEL = 128
+NUM_HEADS = 4
+NUM_LAYERS = 2
+D_FF = 512
 MAX_LEN = 128
 MAX_NEW_TOKENS = 40
 
@@ -122,12 +122,15 @@ def _infer_model_dims(state_dict: dict) -> dict:
     # ---------------------------------------------------------------
     # Comprimento máximo de sequência
     # ---------------------------------------------------------------
+    # Sempre prioriza o max_len salvo no checkpoint (pos_enc.pe).
+    # Isso evita mismatch entre o modelo treinado e o modelo inferido.
     positional_encoding = state_dict.get("encoder.pos_enc.pe")
 
     if positional_encoding is not None:
         max_len = int(positional_encoding.shape[1])
     else:
-        max_len = MAX_LEN
+        # Fallback: tenta ler do model_config, depois do MAX_LEN hardcoded
+        max_len = int(saved_config.get("max_len", MAX_LEN)) if saved_config else MAX_LEN
 
     # ---------------------------------------------------------------
     # Número de cabeças
@@ -224,6 +227,7 @@ def load_components() -> tuple:
     else:
         # Compatibilidade com checkpoints antigos.
         state_dict = checkpoint
+        saved_config = {}
         dims = _infer_model_dims(state_dict)
 
         print(

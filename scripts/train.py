@@ -41,6 +41,11 @@ from model import InspectorTransformer
 # ---------------------------------------------------------------
 # Caminhos
 # ---------------------------------------------------------------
+EXPANDED_DATASET_PATH = (
+    ROOT / "inspector" / "data" / "processed"
+    / "expanded_dataset.json"
+)
+
 OA_DATASET_PATH = (
     ROOT / "inspector" / "data" / "processed"
     / "openassistant_dataset.json"
@@ -59,8 +64,11 @@ MODEL_PATH = (
     ROOT / "inspector" / "models" / "inspector_model.pth"
 )
 
+# Prioridade: expanded > openassistant > mock
 DATASET_PATH = (
-    OA_DATASET_PATH
+    EXPANDED_DATASET_PATH
+    if EXPANDED_DATASET_PATH.exists()
+    else OA_DATASET_PATH
     if OA_DATASET_PATH.exists()
     else MOCK_DATASET_PATH
 )
@@ -78,25 +86,27 @@ _FORCED_DEVICE = os.environ.get(
 
 VOCAB_SIZE = 3000
 
-D_MODEL = 128
-NUM_HEADS = 4
-NUM_LAYERS = 2
-D_FF = 512
+# Hiperparâmetros para treinamento em GPU (Google Colab T4)
+# Para CPU local, reduza: D_MODEL=64, NUM_LAYERS=2, EPOCHS=3, MAX_PAIRS=3000
+D_MODEL = 256
+NUM_HEADS = 8
+NUM_LAYERS = 4
+D_FF = 1024
 
 MAX_LEN = 128
 
-BATCH_SIZE = 32
-EPOCHS = 10
+BATCH_SIZE = 16
+EPOCHS = 20
 LR = 5e-4
 
-MAX_PAIRS = 12000
+MAX_PAIRS = None  # Usar todos os pares disponíveis no dataset
 RETRAIN_TOKENIZER = True
 
 # Validação e Early Stopping
 VALIDATION_RATIO = 0.10
 RANDOM_SEED = 42
 
-EARLY_STOPPING_PATIENCE = 4
+EARLY_STOPPING_PATIENCE = 5
 MIN_DELTA = 0.0001
 
 

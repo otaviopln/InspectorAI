@@ -2,7 +2,7 @@ from tokenizer import BPETokenizer
 
 
 def test_tokenizer_round_trip():
-    tokenizer = BPETokenizer(vocab_size=64)
+    tokenizer = BPETokenizer(vocab_size=300)
 
     sample = "Inspector AI creates structured prompts."
 
