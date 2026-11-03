@@ -6,6 +6,8 @@ response generation. It is imported by both the desktop GUI and terminal CLI.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 from typing import List, Tuple
 
@@ -17,6 +19,7 @@ from scripts.tokenizer import BPETokenizer, EOS_IDX, PAD_IDX, SOS_IDX
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = PROJECT_ROOT / "inspector" / "models" / "inspector_model.pth"
 TOKENIZER_PATH = PROJECT_ROOT / "inspector" / "models" / "tokenizer_vocab.json"
+DATASET_PATH = PROJECT_ROOT / "inspector" / "data" / "processed" / "prepared_dataset.json"
 
 # Inference hyperparameters (fallback defaults; overridden by state_dict)
 # Valores de fallback para checkpoints antigos.
@@ -32,6 +35,84 @@ MAX_NEW_TOKENS = 191
 BEAM_SIZE = 5           # number of candidate sequences to keep at each step
 LENGTH_PENALTY = 0.6    # <1.0 favors shorter sequences, >1.0 favors longer ones
 
+HASH_ALGORITHM = "sha256-canonical-json-v1"
+
+
+def _canonical_json_sha256(path: Path) -> str:
+    """Hash a JSON artifact independently of indentation and line endings."""
+    if not path.is_file():
+        raise FileNotFoundError(f"Artifact JSON necessário à validação não encontrado: {path}")
+
+    with path.open("r", encoding="utf-8") as stream:
+        data = json.load(stream)
+
+    canonical = json.dumps(
+        data,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _validate_checkpoint_artifact_hashes(
+    checkpoint: dict,
+    tokenizer_path: Path = TOKENIZER_PATH,
+    dataset_path: Path = DATASET_PATH,
+) -> bool:
+    """Validate tokenizer and prepared-dataset fingerprints recorded at training."""
+    artifact_hashes = checkpoint.get("artifact_hashes")
+    format_version = int(checkpoint.get("format_version", 0))
+
+    if artifact_hashes is None:
+        if format_version >= 4:
+            raise ValueError(
+                "Checkpoint v4 inválido: metadados artifact_hashes ausentes."
+            )
+        print(
+            "AVISO: checkpoint legado sem hashes de integridade. "
+            "Não é possível confirmar se tokenizer e dataset correspondem "
+            "ao treinamento original."
+        )
+        return False
+
+    if not isinstance(artifact_hashes, dict):
+        raise ValueError("Checkpoint inválido: artifact_hashes precisa ser um dicionário.")
+
+    algorithm = artifact_hashes.get("algorithm")
+    if algorithm != HASH_ALGORITHM:
+        raise ValueError(
+            "Algoritmo de hash incompatível no checkpoint: "
+            f"{algorithm!r}. Esperado {HASH_ALGORITHM!r}."
+        )
+
+    artifacts = (
+        ("tokenizer", tokenizer_path),
+        ("prepared_dataset", dataset_path),
+    )
+
+    for artifact_name, artifact_path in artifacts:
+        expected_hash = artifact_hashes.get(artifact_name)
+        if not isinstance(expected_hash, str) or len(expected_hash) != 64:
+            raise ValueError(
+                f"Checkpoint inválido: hash SHA-256 de {artifact_name} ausente ou inválido."
+            )
+
+        actual_hash = _canonical_json_sha256(Path(artifact_path))
+        if actual_hash != expected_hash:
+            raise ValueError(
+                f"Falha na validação de integridade de {artifact_name}: "
+                f"hash do checkpoint={expected_hash}; hash local={actual_hash}. "
+                "Os artefatos não pertencem ao mesmo treinamento. "
+                "Restaure os arquivos correspondentes ou treine novamente."
+            )
+
+    print(
+        "Integridade dos artefatos validada "
+        "(SHA-256 canônico): tokenizer OK | dataset OK."
+    )
+    return True
 
 
 def _infer_model_dims(
@@ -203,16 +284,7 @@ def load_components() -> tuple:
         )
 
     # ---------------------------------------------------------------
-    # 1. Carrega tokenizer
-    # ---------------------------------------------------------------
-    tokenizer = BPETokenizer.load(TOKENIZER_PATH)
-
-    print(
-        f"Tokenizer carregado: {len(tokenizer.vocab)} tokens."
-    )
-
-    # ---------------------------------------------------------------
-    # 2. Carrega checkpoint
+    # 1. Carrega checkpoint e valida os artefatos associados
     # ---------------------------------------------------------------
     checkpoint = torch.load(
         MODEL_PATH,
@@ -223,6 +295,13 @@ def load_components() -> tuple:
         isinstance(checkpoint, dict)
         and "model_state_dict" in checkpoint
     )
+
+    if is_new_checkpoint:
+        _validate_checkpoint_artifact_hashes(checkpoint)
+
+    # Load the tokenizer only after its fingerprint has been verified.
+    tokenizer = BPETokenizer.load(TOKENIZER_PATH)
+    print(f"Tokenizer carregado: {len(tokenizer.vocab)} tokens.")
 
     if is_new_checkpoint:
         state_dict = checkpoint["model_state_dict"]
