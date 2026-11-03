@@ -1,257 +1,358 @@
-# Inspector AI
+# InspectorAI
 
-Inspector is a custom AI assistant built from absolute zero with Python and PyTorch.
+**A specialized AI assistant for prompt analysis, clarification, and R.C.F.O. structuring.**
 
-## Purpose
+InspectorAI is an experimental AI project built with Python and PyTorch. It is designed to analyze user requests, identify missing information, and transform sufficiently clear prompts into a structured format.
 
-Inspector analyzes user prompts and behaves in one of two ways:
+The project implements a custom Encoder-Decoder Transformer, a Byte-Level BPE tokenizer, a controlled training pipeline, and a desktop interface built with CustomTkinter.
 
-1. **Dubious input** — If the prompt is ambiguous, incomplete, or dubious, Inspector asks strategic clarifying questions instead of guessing.
-2. **Clear input** — If the prompt is clear enough, Inspector reformats it into the **R.C.F.O** framework:
-   - **R**ole — who should act
-   - **C**ontext — background and situation
-   - **F**ocus — the specific task or goal
-   - **O**utput — the expected deliverable or format
+> InspectorAI is an educational and experimental machine learning project. It is not a general-purpose language model or a production-ready AI assistant.
 
-## Project Structure
+## Overview
 
-```
-InspectorAI/
-├── History.md                  # Project changelog (all development sessions)
-├── README.md                   # This file
-├── requirements.txt            # Python dependencies
-├── .gitignore                  # Git ignore rules
-├── LICENSE                     # License (MIT)
-├── inspector.py                # Interactive terminal application
-├── inspector_gui.py            # Desktop GUI application (CustomTkinter)
-├── inspector/                  # Core package
-│   ├── __init__.py
-│   ├── config.py               # Configuration and paths
-│   ├── core/
-│   │   ├── __init__.py
-│   │   ├── analyzer.py         # Prompt analyzer (dubious vs clear) — legacy
-│   │   ├── formatter.py        # R.C.F.O formatter — legacy
-│   │   └── questioner.py       # Strategic question generator — legacy
-│   ├── data/
-│   │   ├── __init__.py
-│   │   ├── raw/                # Raw prompt datasets
-│   │   │   ├── mock_dataset.json
-│   │   │   ├── openassistant_dataset.json
-│   │   │   └── expanded_dataset.json
-│   │   └── processed/          # Processed prompt datasets
-│   │       ├── mock_dataset.json
-│   │       ├── openassistant_dataset.json
-│   │       └── expanded_dataset.json
-│   ├── models/                 # Trained models
-│   │   ├── __init__.py
-│   │   ├── inspector_model.pth  # Trained PyTorch weights
-│   │   └── tokenizer_vocab.json # BPE tokenizer vocabulary
-│   ├── tests/                  # Unit tests
-│   │   ├── __init__.py
-│   │   ├── conftest.py
-│   │   ├── test_dataset_builder.py
-│   │   ├── test_model.py
-│   │   ├── test_tokenizer.py
-│   │   └── test_training.py
-│   └── utils/                  # Utilities (empty, reserved)
-│       ├── __init__.py
-│       └── .gitkeep
-├── scripts/                    # Entry-point and utility scripts
-│   ├── __init__.py
-│   ├── train.py                # Main training loop (CPU/GPU/DirectML)
-│   ├── train_colab.py          # Training script optimized for Google Colab
-│   ├── model.py                # Transformer Seq2Seq model (from scratch)
-│   ├── tokenizer.py            # BPE tokenizer (HuggingFace tokenizers/Rust)
-│   ├── dataset_builder.py      # Mock dataset builder (600 pairs)
-│   ├── build_openassistant_dataset.py  # OpenAssistant dataset converter
-│   ├── build_alpaca_dataset.py   # Alpaca dataset converter
-│   ├── expand_dataset.py       # Synthetic dataset generator (20,000+ pairs)
-│   ├── run.py                  # Interactive CLI entry point
-│   └── colab_train.ipynb       # Google Colab notebook for GPU training
-└── tests/                      # Root-level tests (mirror of inspector/tests)
-    ├── conftest.py
-    ├── test_dataset_builder.py
-    ├── test_model.py
-    ├── test_tokenizer.py
-    └── test_training.py
-```
+InspectorAI learns to perform two primary tasks:
 
-## Installation
+### 1. Clarification
 
-```bash
-cd InspectorAI
-pip install -r requirements.txt
-```
+When a request is vague, incomplete, or under-specified, the model generates targeted questions instead of making unsupported assumptions.
 
-## Usage
+For partially specified requests, it should preserve the information already provided and ask only about material gaps.
 
-### Interactive Terminal
+### 2. R.C.F.O. Formatting
 
-```bash
-python inspector.py
-```
+When a request contains sufficient information, the model restructures it using the R.C.F.O. framework:
 
-### Desktop GUI (Recommended)
+| Component | Description |
+|---|---|
+| Role | Who should perform the task |
+| Context | Relevant background and circumstances |
+| Focus | The specific task or objective |
+| Output | The expected deliverable or format |
 
-```bash
-python inspector_gui.py
-```
+The intended behavior is to preserve the user's original requirements without introducing unsupported constraints, deliverables, or assumptions.
 
-Requires `customtkinter` (included in requirements.txt).
+## Architecture
 
-### Training
+InspectorAI uses a custom sequence-to-sequence Transformer implemented with PyTorch primitives.
 
-**Local (CPU):**
-```bash
-python scripts/train.py
-```
+### Model components
 
-**Google Colab (GPU — Recommended for production quality):**
+- **Encoder:** processes the input prompt using self-attention.
+- **Decoder:** generates the output autoregressively.
+- **Multi-Head Attention:** implements scaled dot-product attention.
+- **Cross-Attention:** connects decoder representations to the encoder output.
+- **Positional Encoding:** injects sinusoidal positional information.
+- **Feed-Forward Networks:** process token representations.
+- **Layer Normalization and Residual Connections:** stabilize model training.
 
-1. Open [colab.research.google.com](https://colab.research.google.com)
-2. Upload: `scripts/train_colab.py`, `scripts/model.py`, `scripts/tokenizer.py`, `inspector/data/processed/expanded_dataset.json`
-3. Runtime → Change runtime type → GPU
-4. Run all cells in `scripts/colab_train.ipynb`
-5. Download `inspector_model.pth` and `tokenizer_vocab.json`
-6. Copy them to `InspectorAI/inspector/models/`
+The model includes padding masks and causal masks to support sequence-to-sequence learning.
 
-## Datasets
+### Tokenizer
 
-| Dataset | Pairs | Source | License |
-|---------|-------|--------|---------|
-| `mock_dataset.json` | 600 | Synthetic (hand-written) | MIT |
-| `openassistant_dataset.json` | 9,202 | HuggingFace `OpenAssistant/oasst1` | Apache 2.0 |
-| `expanded_dataset.json` | 20,000 | Synthetic (template-based) | MIT |
-| **Total** | **~31,202** | | |
+InspectorAI uses a Byte-Level BPE tokenizer powered by Hugging Face Tokenizers, whose implementation is written in Rust.
 
-## Model Architecture
+Special token IDs:
 
-- **Type:** Encoder-Decoder Transformer (Seq2Seq)
-- **Attention:** Multi-Head Self-Attention + Cross-Attention
-- **Positional Encoding:** Sinusoidal
-- **Decoder:** Autoregressive with Beam Search
-- **Training:** Teacher forcing, CrossEntropyLoss, Adam optimizer
+| Token | ID |
+|---|---:|
+| `<PAD>` | 0 |
+| `<SOS>` | 1 |
+| `<EOS>` | 2 |
+| `<UNK>` | 3 |
 
-## License
+The tokenizer is trained on the training split and is saved alongside the model checkpoint.
 
-MIT License — see `LICENSE` file.
+### Text generation
 
-## Development Roadmap
+The inference implementation includes autoregressive generation with Beam Search.
 
-- [x] Project structure and core package
-- [x] BPE Tokenizer (from scratch)
-- [x] Transformer Seq2Seq model (from scratch)
-- [x] Training loop with validation and early stopping
-- [x] Dataset generation (mock, OpenAssistant, synthetic 20k pairs)
-- [x] Interactive terminal application
-- [x] Desktop GUI application
-- [ ] Beam search fine-tuning
-- [ ] Validation metrics (BLEU/ROUGE)
-- [ ] Domain-specific fine-tuning
-- [ ] REST API endpoint
+The current implementation uses configurable generation parameters, including beam size, length penalty, and maximum generated tokens.
 
-# InspectorAI dataset and training pipeline — version 2
+## Training Pipeline
 
-## Decisions adopted
+The current training pipeline uses a reviewed and explicitly prepared dataset.
 
-- **Partial requests:** preserve the facts already supplied and ask only targeted questions about missing information.
-- **Language:** English (`language: "en"`) for this training version.
-- **Architecture:** one Encoder–Decoder Transformer. The target explicitly starts with either `Decision: CLARIFY` or `Decision: FORMAT_RCFO`.
+The training script does not silently fall back to the previous synthetic or OpenAssistant datasets.
 
-## Data layout
+### Dataset preparation
 
-```text
-inspector/data/raw/curated_examples.jsonl
-inspector/data/processed/prepared_dataset.json
-inspector/data/processed/dataset_report.json
-inspector/models/inspector_model.pth
-inspector/models/tokenizer_vocab.json
-inspector/models/training_metrics.json
-```
+The expected source dataset is:
 
-Each JSONL line is one independently reviewable record. Required fields:
+`inspector/data/raw/curated_examples.jsonl`
 
-- `id`: unique record ID.
-- `task`: `clarify` or `format_rcfo`.
-- `ambiguity`: `vague`, `partial`, or `clear`.
-- `language`: `en`.
-- `input`: original user request.
-- `target`: ideal model response.
-- `source`: provenance, such as `human_authored`, `assistant_seed`, or a named public dataset.
-- `group_id`: family of semantically related examples (it may contain vague, partial, and clear versions of the same underlying scenario); all variants in a group stay in one split.
-- `review_status`: `pending_review`, `approved`, or `rejected`.
+Each JSONL record represents an independently reviewable training example.
 
-The starter file contains 18 seed examples. They are deliberately marked `pending_review`: they are drafts for inspection, not claims of human validation. Review each input/target pair. Change the status to `approved` only after checking that the target is faithful, complete, and semantically consistent. Do not approve all records mechanically.
+Required fields:
 
-## Target contract
+| Field | Description |
+|---|---|
+| `id` | Unique record identifier |
+| `task` | `clarify` or `format_rcfo` |
+| `ambiguity` | `vague`, `partial`, or `clear` |
+| `language` | Dataset language |
+| `input` | Original user request |
+| `target` | Expected model response |
+| `source` | Data provenance |
+| `group_id` | Identifier for related examples |
+| `review_status` | Review state |
 
-### Vague
+The current training version expects English-language data.
 
-```text
-Decision: CLARIFY
-Questions:
-1. ...
-2. ...
-```
+Records must be explicitly approved before they can be included in the prepared dataset.
 
-Ask only questions needed to identify the request's goal, subject, users, constraints, or deliverable. Do not invent a role or project context.
+The preparation pipeline:
 
-### Partial
+1. Validates the dataset schema and task compatibility.
+2. Rejects duplicate IDs and duplicate inputs.
+3. Excludes records that have not been approved.
+4. Keeps related examples with the same `group_id` in the same split.
+5. Creates training, validation, and test sets.
+6. Generates a prepared dataset and a dataset report.
 
-```text
-Decision: CLARIFY
-Known requirements:
-- ...
-Missing information:
-- ...
-Questions:
-1. ...
-```
+The intended split proportions are 80% training, 10% validation, and 10% test, with actual proportions depending on group sizes.
 
-The `Known requirements` section must preserve facts present in the input. Questions must address only material gaps. Do not ask again for information already supplied.
+### Prepare the dataset
 
-### Clear
-
-```text
-Decision: FORMAT_RCFO
-Role: ...
-Context: ...
-Focus: ...
-Output: ...
-```
-
-Preserve the user's requirements. Do not add frameworks, platforms, databases, deadlines, or deliverables that were not requested or logically entailed.
-
-## Prepare the dataset
-
-From the repository root:
+From the project root:
 
 ```powershell
 python scripts/prepare_dataset.py
 ```
 
-The preparation script:
+The resulting dataset is stored at:
 
-1. validates schema and task/ambiguity compatibility;
-2. rejects duplicate IDs and duplicate inputs;
-3. excludes every record not explicitly marked `approved`;
-4. keeps each `group_id` intact;
-5. splits each task/ambiguity stratum into 80% train, 10% validation, 10% test;
-6. writes `prepared_dataset.json` and `dataset_report.json`.
+`inspector/data/processed/prepared_dataset.json`
 
-At least three distinct groups are required in each of the three ambiguity strata. The splitter uses a deterministic, repeated greedy assignment to keep whole groups intact while approximating the requested class proportions. With a small dataset, ratios are approximate because groups are indivisible.
-
-## Train
+### Train the model
 
 ```powershell
 python scripts/train.py
 ```
 
-The new training script reads only `prepared_dataset.json`; it does not silently fall back to the old synthetic or OpenAssistant data. It fits the tokenizer only on training text, uses shifted teacher-forcing targets, rejects examples that would be silently truncated, selects the checkpoint by validation loss, restores that best checkpoint, and reports held-out test loss once at the end. New model/tokenizer artifacts are staged and replace the previous pair only after the run and test evaluation complete successfully. For Colab, use `scripts/colab_train_v2.ipynb`, not the older notebook that imports `train_colab.py`.
+The training pipeline includes:
 
-## Important limitations
+- Dataset validation.
+- Tokenizer training.
+- Teacher-forcing training.
+- Cross-entropy loss.
+- Adam optimization.
+- Validation loss monitoring.
+- Early stopping.
+- Best-checkpoint selection.
+- Held-out test evaluation.
 
-- The 18 starter records are a **pipeline smoke-test seed**, not enough data to train a useful general-purpose language model. After reviewing them, build a larger human-checked set with broad task coverage before interpreting generation quality.
-- A low token-level loss does not prove useful prompt analysis. Keep a separate fixed evaluation set and manually score decision accuracy, question relevance, information preservation, and R.C.F.O. fidelity.
-- The old `expand_dataset.py` combinatorial generator is disabled because independent combinations of role/context/focus/output created contradictory labels.
-- Keep the model checkpoint and tokenizer from the same training run. Back up the current files before replacing them.
+The tokenizer and model artifacts are staged and replace the previous artifacts only after the training run and test evaluation complete successfully.
+
+## Project Structure
+
+```text
+InspectorAI/
+├── README.md
+├── History.md
+├── requirements.txt
+├── .gitignore
+├── LICENSE
+│
+├── inspector.py
+├── inspector_gui.py
+│
+├── inspector/
+│   ├── __init__.py
+│   ├── config.py
+│   │
+│   ├── data/
+│   │   ├── raw/
+│   │   │   └── curated_examples.jsonl
+│   │   │
+│   │   └── processed/
+│   │       ├── prepared_dataset.json
+│   │       └── dataset_report.json
+│   │
+│   ├── models/
+│   │   ├── inspector_model.pth
+│   │   ├── tokenizer_vocab.json
+│   │   └── training_metrics.json
+│   │
+│   └── tests/
+│
+├── scripts/
+│   ├── __init__.py
+│   ├── model.py
+│   ├── tokenizer.py
+│   ├── train.py
+│   ├── prepare_dataset.py
+│   └── colab_train_v2.ipynb
+│
+└── tests/
+```
+
+This tree describes the current training and inference architecture. Generated artifacts and development files may vary depending on the working environment.
+
+## Installation
+
+### Requirements
+
+- Python 3.10 or newer
+- PyTorch 2.0 or newer
+- NumPy
+- Hugging Face Tokenizers
+- CustomTkinter
+
+Install the project dependencies:
+
+```powershell
+git clone https://github.com/otaviopln/InspectorAI.git
+cd InspectorAI
+
+python -m venv .venv
+.venv\Scripts\activate
+
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+For environments using CUDA, install a PyTorch build compatible with the installed NVIDIA driver and CUDA runtime.
+
+## Usage
+
+### Desktop application
+
+Launch the graphical interface:
+
+```powershell
+python inspector_gui.py
+```
+
+The desktop application provides a chat-oriented interface for interacting with the locally loaded model.
+
+The current GUI implementation includes:
+
+- Dark workspace and sidebar.
+- Responsive chat area.
+- Animated loading and status indicators.
+- Typewriter-style response rendering.
+- Background model loading and inference.
+- Thread-safe communication between inference and the interface.
+- A single-inference guard.
+
+The GUI requires the trained model and tokenizer artifacts to be available.
+
+### Terminal application
+
+Launch the interactive terminal interface:
+
+```powershell
+python inspector.py
+```
+
+The terminal application loads the tokenizer and trained Transformer, accepts user prompts, and generates responses.
+
+## Training Configuration
+
+The current training configuration is defined in `scripts/train.py`.
+
+| Parameter | Value |
+|---|---:|
+| Vocabulary size | 3,000 |
+| Model dimension | 256 |
+| Attention heads | 8 |
+| Transformer layers | 4 |
+| Feed-forward dimension | 1,024 |
+| Maximum sequence length | 192 |
+| Batch size | 16 |
+| Maximum epochs | 20 |
+| Learning rate | 0.0005 |
+| Early stopping patience | 5 |
+| Random seed | 42 |
+
+These values represent the current code configuration, not a guarantee of model quality or a universal recommendation.
+
+The training script automatically selects CUDA when available, unless a device is explicitly configured.
+
+Supported device overrides:
+
+```powershell
+$env:INSPECTOR_DEVICE="cpu"
+python scripts/train.py
+```
+
+```powershell
+$env:INSPECTOR_DEVICE="cuda"
+python scripts/train.py
+```
+
+```powershell
+$env:INSPECTOR_DEVICE="directml"
+python scripts/train.py
+```
+
+The `directml` option requires the corresponding PyTorch DirectML dependency.
+
+## Google Colab
+
+The project includes a Colab-oriented training notebook:
+
+`scripts/colab_train_v2.ipynb`
+
+For GPU training:
+
+1. Open the notebook in Google Colab.
+2. Select a GPU runtime.
+3. Make the project files and approved dataset available.
+4. Execute the training pipeline.
+5. Download the resulting model and tokenizer artifacts.
+6. Place the artifacts in `inspector/models/`.
+
+Keep the model checkpoint and tokenizer from the same training run. They are a matched pair and should not be mixed with artifacts from different runs.
+
+## Model Artifacts
+
+The training process produces:
+
+| Artifact | Purpose |
+|---|---|
+| `inspector_model.pth` | Trained Transformer checkpoint |
+| `tokenizer_vocab.json` | BPE tokenizer vocabulary and configuration |
+| `training_metrics.json` | Training and evaluation metrics |
+
+The checkpoint stores the model state and configuration required for inference.
+
+The inference code supports checkpoints with explicit model configuration and provides compatibility handling for older checkpoints.
+
+## Limitations
+
+InspectorAI is an experimental project. Its capabilities depend heavily on the quality, size, and diversity of the training dataset.
+
+Important limitations include:
+
+- A small dataset is insufficient for reliable general-purpose language understanding.
+- Training loss alone does not establish useful prompt-analysis behavior.
+- Generated clarification questions may be irrelevant or incomplete.
+- R.C.F.O. formatting may omit requirements or introduce unsupported assumptions.
+- English-language training data limits the reliability of other languages.
+- The model does not have the broad knowledge or capabilities of a large pretrained language model.
+
+The initial curated examples are intended to validate the data and training pipeline. They should not be interpreted as a sufficiently large or comprehensively human-validated training corpus.
+
+Evaluation should include a separate held-out dataset and manual assessment of:
+
+- Decision accuracy.
+- Relevance of clarification questions.
+- Preservation of user requirements.
+- R.C.F.O. formatting fidelity.
+- Unsupported assumptions.
+- Output consistency.
+
+## Development
+
+InspectorAI is developed as an educational machine learning project focused on understanding the complete workflow of a specialized text-generation model.
+
+The repository contains the model implementation, tokenizer, data preparation pipeline, training code, inference applications, and tests.
+
+Contributions, experiments, and improvements to the training data and evaluation methodology are welcome.
+
+## License
+
+This project is licensed under the MIT License.
+
+See [LICENSE](LICENSE) for details.
