@@ -613,3 +613,13 @@ The current supported workflow remains:
 
 Archived modules are retained for historical reference and are not maintained
 or tested as part of the current application.
+
+
+## Session 19 — Isolate the Standalone Tokenizer Test (2026-11-03)
+
+### What changed
+
+- Updated `scripts/tokenizer.py` so running it directly trains and tests the tokenizer without writing to the official `inspector/models/tokenizer_vocab.json` artifact.
+- The standalone test now saves and reloads its temporary tokenizer inside a `TemporaryDirectory`, which is automatically removed at the end of the run.
+- Removed the production tokenizer path from the standalone tokenizer script.
+- Added a regression test that verifies the standalone test uses a separate path and leaves the official tokenizer file unchanged.
