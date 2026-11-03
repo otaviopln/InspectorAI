@@ -1,4 +1,3 @@
-import tokenizer as tokenizer_module
 from pathlib import Path
 
 import tokenizer as tokenizer_module
