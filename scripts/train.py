@@ -11,6 +11,7 @@ The dataset must be prepared with scripts/prepare_dataset.py first.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import random
@@ -81,6 +82,29 @@ def pick_device() -> torch.device:
 
 
 DEVICE = pick_device()
+
+HASH_ALGORITHM = "sha256-canonical-json-v1"
+
+
+def _canonical_json_sha256(data: Any) -> str:
+    """Hash JSON content independently of indentation and line endings."""
+    canonical = json.dumps(
+        data,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _canonical_json_file_sha256(path: Path) -> str:
+    """Load a JSON artifact and return its canonical SHA-256 fingerprint."""
+    if not path.is_file():
+        raise FileNotFoundError(f"Artifact JSON não encontrado: {path}")
+    with path.open("r", encoding="utf-8") as stream:
+        data = json.load(stream)
+    return _canonical_json_sha256(data)
 
 
 def _records_to_pairs(records: Any, split_name: str) -> list[tuple[str, str]]:
@@ -243,6 +267,7 @@ def main() -> None:
         torch.cuda.manual_seed_all(RANDOM_SEED)
 
     train_pairs, validation_pairs, test_pairs, dataset_info = load_prepared_dataset()
+    prepared_dataset_sha256 = _canonical_json_sha256(dataset_info)
 
     print(f"Device: {DEVICE}")
     if DEVICE.type == "cuda":
@@ -269,6 +294,15 @@ def main() -> None:
         tokenizer_is_staged = True
     else:
         tokenizer = BPETokenizer.load(TOKENIZER_PATH)
+
+    tokenizer_artifact_path = (
+        STAGING_TOKENIZER_PATH if tokenizer_is_staged else TOKENIZER_PATH
+    )
+    artifact_hashes = {
+        "algorithm": HASH_ALGORITHM,
+        "tokenizer": _canonical_json_file_sha256(tokenizer_artifact_path),
+        "prepared_dataset": prepared_dataset_sha256,
+    }
 
     vocab_size = len(tokenizer.vocab)
     if vocab_size <= EOS_IDX:
@@ -351,7 +385,7 @@ def main() -> None:
 
             MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
             checkpoint = {
-                "format_version": 3,
+                "format_version": 4,
                 "model_state_dict": best_state_dict,
                 "model_config": model_config,
                 "training_config": {
@@ -371,6 +405,7 @@ def main() -> None:
                     "validation_examples": len(validation_pairs),
                     "test_examples": len(test_pairs),
                 },
+                "artifact_hashes": artifact_hashes,
             }
             torch.save(checkpoint, STAGING_MODEL_PATH)
             print(f"  Best checkpoint staged: val_loss={validation_loss:.4f}")
@@ -391,6 +426,22 @@ def main() -> None:
     # Restore best validation checkpoint before touching the held-out test set.
     model.load_state_dict(best_state_dict)
     test_loss = evaluate_loss(model, test_pairs, tokenizer, criterion)
+
+    # Refuse to publish a checkpoint if either source artifact changed
+    # while training was running.
+    current_dataset_sha256 = _canonical_json_file_sha256(PREPARED_DATASET_PATH)
+    if current_dataset_sha256 != artifact_hashes["prepared_dataset"]:
+        raise RuntimeError(
+            "O dataset preparado mudou durante o treinamento. "
+            "O checkpoint não será publicado; execute o treinamento novamente."
+        )
+
+    current_tokenizer_sha256 = _canonical_json_file_sha256(tokenizer_artifact_path)
+    if current_tokenizer_sha256 != artifact_hashes["tokenizer"]:
+        raise RuntimeError(
+            "O tokenizador mudou durante o treinamento. "
+            "O checkpoint não será publicado; execute o treinamento novamente."
+        )
 
     # Commit the new model/tokenizer only after training and held-out
     # evaluation have completed. A failed run therefore leaves the old pair intact.
