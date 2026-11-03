@@ -11,8 +11,6 @@ Run from the project root: python inspector_gui.py
 
 from __future__ import annotations
 
-from __future__ import annotations
-
 import queue
 import threading
 from typing import Optional
