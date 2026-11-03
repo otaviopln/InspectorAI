@@ -88,6 +88,20 @@ def test_canonical_hash_ignores_json_formatting(tmp_path):
     assert first_hash == second_hash
 
 
+def test_missing_dataset_artifact_is_rejected(tmp_path):
+    tokenizer_path = _write_json(tmp_path / "tokenizer.json", {"vocab": {"a": 4}})
+    dataset_path = _write_json(tmp_path / "prepared_dataset.json", {"splits": {}})
+    checkpoint = _checkpoint_for(tokenizer_path, dataset_path)
+    dataset_path.unlink()
+
+    with pytest.raises(FileNotFoundError, match="prepared_dataset"):
+        engine._validate_checkpoint_artifact_hashes(
+            checkpoint,
+            tokenizer_path=tokenizer_path,
+            dataset_path=dataset_path,
+        )
+
+
 def test_checkpoint_v4_requires_artifact_hashes():
     with pytest.raises(ValueError, match="artifact_hashes"):
         engine._validate_checkpoint_artifact_hashes({"format_version": 4})
