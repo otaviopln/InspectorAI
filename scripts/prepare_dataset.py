@@ -39,6 +39,18 @@ def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().casefold())
 
 
+def _canonical_json_sha256(data: Any) -> str:
+    """Hash parsed JSON content independently of formatting and line endings."""
+    canonical = json.dumps(
+        data,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         raise FileNotFoundError(
@@ -240,7 +252,8 @@ def grouped_stratified_split(
         split: {stratum: totals[stratum] * split_ratios[split] for stratum in strata}
         for split in split_names
     }
-    group_ids = list(grouped)
+    # Sort set/dict-derived IDs before seeded shuffling to make splits reproducible.
+    group_ids = sorted(grouped)
     best_assignment: dict[str, str] | None = None
     best_score = float("inf")
 
@@ -276,7 +289,7 @@ def grouped_stratified_split(
             return stratum in covered_by_split[split]
 
         for stratum in strata_order:
-            candidate_ids = list(groups_by_stratum[stratum])
+            candidate_ids = sorted(groups_by_stratum[stratum])
             rng.shuffle(candidate_ids)
 
             for split in split_names:
@@ -326,7 +339,7 @@ def grouped_stratified_split(
 
         # Assign remaining groups by minimizing normalized deviation from
         # the requested per-stratum proportions.
-        remaining_ids = [group_id for group_id in grouped if group_id not in assignment]
+        remaining_ids = [group_id for group_id in group_ids if group_id not in assignment]
         rng.shuffle(remaining_ids)
 
         def rarity(group_id: str) -> tuple[float, int]:
@@ -445,7 +458,11 @@ def prepare_dataset(
     records, pending_count = load_approved_records(input_path)
     splits = grouped_stratified_split(records, seed=seed)
 
-    source_digest = hashlib.sha256(input_path.read_bytes()).hexdigest()
+    source_records = read_jsonl(input_path)
+    source_digest = _canonical_json_sha256([
+        {key: value for key, value in record.items() if key != "_line"}
+        for record in source_records
+    ])
     prepared = {
         "schema_version": "inspector.dataset.v2",
         "language": "en",

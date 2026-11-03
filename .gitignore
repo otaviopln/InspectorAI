@@ -52,3 +52,7 @@ logs/
 
 # OS
 Thumbs.db
+
+# Generated behavioral evaluation outputs
+inspector/data/processed/evaluation_report.json
+inspector/data/processed/evaluation_predictions.jsonl

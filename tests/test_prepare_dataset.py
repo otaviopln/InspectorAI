@@ -50,6 +50,73 @@ def write_jsonl(path, rows):
     )
 
 
+
+def test_prepared_dataset_is_deterministic_across_python_hash_seeds(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    rows = [
+        make_record(f"{kind}_{index}", "", kind, f"{kind}_family_{index}")
+        for kind in ("vague", "partial", "clear")
+        for index in range(8)
+    ]
+    source = tmp_path / "curated.jsonl"
+    write_jsonl(source, rows)
+
+    script_dir = Path(__file__).resolve().parents[1] / "scripts"
+    code = (
+        "import sys; "
+        "from pathlib import Path; "
+        "sys.path.insert(0, sys.argv[3]); "
+        "from prepare_dataset import prepare_dataset; "
+        "prepare_dataset(Path(sys.argv[1]), Path(sys.argv[2]), seed=42)"
+    )
+
+    outputs = []
+    for hash_seed in ("7", "98765"):
+        output = tmp_path / f"prepared_{hash_seed}.json"
+        env = os.environ.copy()
+        env["PYTHONHASHSEED"] = hash_seed
+        subprocess.run(
+            [sys.executable, "-c", code, str(source), str(output), str(script_dir)],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        outputs.append(output.read_bytes())
+
+    assert outputs[0] == outputs[1]
+
+
+def test_source_fingerprint_ignores_json_whitespace_and_line_endings(tmp_path):
+    rows = [
+        make_record(f"{kind}_{index}", "", kind, f"{kind}_family_{index}")
+        for kind in ("vague", "partial", "clear")
+        for index in range(6)
+    ]
+    compact = tmp_path / "compact.jsonl"
+    formatted = tmp_path / "formatted.jsonl"
+
+    compact.write_bytes(
+        ("\n".join(json.dumps(row, separators=(",", ":")) for row in rows) + "\n").encode("utf-8")
+    )
+    formatted.write_bytes(
+        ("\r\n".join(json.dumps(row, ensure_ascii=False, indent=2) for row in rows) + "\r\n").encode("utf-8")
+    )
+
+    compact_prepared, _ = prepare_module.prepare_dataset(
+        compact, tmp_path / "compact" / "prepared_dataset.json", seed=42
+    )
+    formatted_prepared, _ = prepare_module.prepare_dataset(
+        formatted, tmp_path / "formatted" / "prepared_dataset.json", seed=42
+    )
+
+    assert compact_prepared["source_sha256"] == formatted_prepared["source_sha256"]
+    assert compact_prepared["splits"] == formatted_prepared["splits"]
+
+
 def test_grouped_split_has_no_group_leakage():
     rows = []
     for category in ("vague", "partial", "clear"):
