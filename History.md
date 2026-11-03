@@ -623,3 +623,16 @@ or tested as part of the current application.
 - The standalone test now saves and reloads its temporary tokenizer inside a `TemporaryDirectory`, which is automatically removed at the end of the run.
 - Removed the production tokenizer path from the standalone tokenizer script.
 - Added a regression test that verifies the standalone test uses a separate path and leaves the official tokenizer file unchanged.
+
+
+## Session 20 — Checkpoint Artifact Integrity (2026-11-03)
+
+### What changed
+
+- Upgraded newly trained checkpoints to format version 4.
+- Added canonical JSON SHA-256 fingerprints for the tokenizer artifact and the prepared dataset used for training.
+- Added a pre-publication guard that aborts the run if either artifact changes during training.
+- Updated inference loading to verify both hashes before accepting a format-v4 checkpoint.
+- A changed tokenizer, changed prepared dataset, or missing prepared dataset now blocks loading with an explicit error.
+- Older checkpoints without hash metadata remain compatible but emit a warning because their artifact pairing cannot be verified.
+- Added regression tests for matching hashes, tokenizer mismatch, dataset mismatch, canonical JSON stability, and legacy checkpoint compatibility.
