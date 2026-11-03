@@ -383,6 +383,12 @@ InspectorAI is developed as an educational machine learning project focused on u
 
 The repository contains the model implementation, tokenizer, data preparation pipeline, training code, inference applications, and tests.
 
+Run the checkpoint artifact integrity regression tests from the project root:
+
+```powershell
+pytest tests/test_artifact_integrity.py -v
+```
+
 Contributions, experiments, and improvements to the training data and evaluation methodology are welcome.
 
 ## License
