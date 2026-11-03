@@ -1,93 +1,76 @@
-"""Tests for dataset_builder.py (expand_dataset.py)."""
+"""Regression tests for the new curated dataset pipeline.
 
-import importlib.util
+The former combinatorial build_dataset() API is intentionally retired.
+"""
+
 import json
 from pathlib import Path
+import importlib.util
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS_DIR = ROOT / "scripts"
-
-# Carregar expand_dataset.py diretamente via importlib para evitar
-# conflitos de nome com outros módulos.
-expand_path = SCRIPTS_DIR / "expand_dataset.py"
-spec = importlib.util.spec_from_file_location("expand_dataset_module", expand_path)
-expand_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(expand_module)
-
-build_dataset = expand_module.build_dataset
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "prepare_dataset.py"
+SPEC = importlib.util.spec_from_file_location("prepare_dataset_builder", SCRIPT)
+module = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(module)
 
 
-def test_dataset_has_required_structure():
-    """Dataset must have version, description, splits, and counts."""
-    dataset = build_dataset(target_pairs=10)
-
-    assert "version" in dataset
-    assert "description" in dataset
-    assert "splits" in dataset
-    assert "counts" in dataset
-
-
-def test_dataset_has_both_splits():
-    """Dataset must contain both vague_to_questions and clear_to_rcfo splits."""
-    dataset = build_dataset(target_pairs=10)
-
-    splits = dataset["splits"]
-    assert "vague_to_questions" in splits
-    assert "clear_to_rcfo" in splits
-
-
-def test_dataset_pair_structure():
-    """Each pair must have 'input' and 'target' keys."""
-    dataset = build_dataset(target_pairs=10)
-
-    for split_name, pairs in dataset["splits"].items():
-        for pair in pairs:
-            assert "input" in pair
-            assert "target" in pair
-            assert isinstance(pair["input"], str)
-            assert isinstance(pair["target"], str)
-            assert len(pair["input"]) > 0
-            assert len(pair["target"]) > 0
-
-
-def test_dataset_counts_match():
-    """counts must match the actual number of pairs in splits."""
-    dataset = build_dataset(target_pairs=20)
-
-    counts = dataset["counts"]
-    splits = dataset["splits"]
-
-    assert counts["vague_to_questions"] == len(splits["vague_to_questions"])
-    assert counts["clear_to_rcfo"] == len(splits["clear_to_rcfo"])
-    assert counts["total"] == len(splits["vague_to_questions"]) + len(splits["clear_to_rcfo"])
+def _record(record_id, ambiguity, group_id):
+    if ambiguity == "vague":
+        task = "clarify"
+        target = (
+            "Decision: CLARIFY\nQuestions:\n"
+            "1. What result do you need?\n2. What information is available?"
+        )
+    elif ambiguity == "partial":
+        task = "clarify"
+        target = (
+            "Decision: CLARIFY\nKnown requirements:\n- A known task.\n"
+            "Missing information:\n- The intended scope.\n"
+            "Questions:\n1. What scope should be included?"
+        )
+    else:
+        task = "format_rcfo"
+        target = (
+            "Decision: FORMAT_RCFO\nRole: Analyst\nContext: A defined task.\n"
+            "Focus: Complete the requested analysis.\nOutput: A concise report."
+        )
+    return {
+        "id": record_id,
+        "task": task,
+        "ambiguity": ambiguity,
+        "language": "en",
+        "input": f"Perform a unique request for {record_id}.",
+        "target": target,
+        "source": "unit_test",
+        "group_id": group_id,
+        "review_status": "approved",
+    }
 
 
-def test_dataset_total_matches_target():
-    """Total pairs should approximately match the target."""
-    dataset = build_dataset(target_pairs=50)
-
-    assert dataset["counts"]["total"] == 50
-
-
-def test_vague_pairs_have_question_structure():
-    """Vague prompt targets should contain R.C.F.O-aligned questions."""
-    dataset = build_dataset(target_pairs=20)
-
-    for pair in dataset["splits"]["vague_to_questions"]:
-        target = pair["target"]
-        assert "Role:" in target
-        assert "Context:" in target
-        assert "Focus:" in target
-        assert "Output:" in target
+def test_new_schema_requires_all_three_ambiguity_types():
+    rows = [
+        _record(f"{kind}_{i}", kind, f"{kind}_{i}")
+        for kind in ("vague", "partial", "clear")
+        for i in range(3)
+    ]
+    splits = module.grouped_stratified_split(rows, seed=7)
+    for split_name in ("train", "validation", "test"):
+        observed = {row["ambiguity"] for row in splits[split_name]}
+        assert observed == {"vague", "partial", "clear"}
 
 
-def test_clear_pairs_have_rcfo_structure():
-    """Clear prompt targets should contain R.C.F.O fields."""
-    dataset = build_dataset(target_pairs=20)
-
-    for pair in dataset["splits"]["clear_to_rcfo"]:
-        target = pair["target"]
-        assert "Role:" in target
-        assert "Context:" in target
-        assert "Focus:" in target
-        assert "Output:" in target
+def test_jsonl_is_validated_and_prepared(tmp_path):
+    rows = [
+        _record(f"{kind}_{i}", kind, f"{kind}_{i}")
+        for kind in ("vague", "partial", "clear")
+        for i in range(3)
+    ]
+    source = tmp_path / "curated.jsonl"
+    source.write_text(
+        "\n".join(json.dumps(row) for row in rows),
+        encoding="utf-8",
+    )
+    prepared_path = tmp_path / "processed" / "prepared_dataset.json"
+    prepared, report = module.prepare_dataset(source, prepared_path, seed=7)
+    assert prepared_path.exists()
+    assert report["counts"]["total"] == 9
+    assert set(prepared["splits"]) == {"train", "validation", "test"}

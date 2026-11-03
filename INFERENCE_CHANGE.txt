@@ -1,0 +1,28 @@
+INFERENCE COMPATIBILITY CHANGES
+
+1. In inspector.py, find:
+
+    MAX_NEW_TOKENS = 40
+
+   Change it to:
+
+    MAX_NEW_TOKENS = 96
+
+   Version 2 targets may contain the decision label, known requirements,
+   missing information, targeted questions, or all four R.C.F.O. fields.
+   Forty generated tokens can cut the response off. Beam search remains
+   bounded by the checkpoint's positional capacity minus one.
+
+2. In _infer_model_dims(), if the fallback branch still contains a reference
+   to `saved_config` even though the function does not receive that variable,
+   replace the fallback assignment with:
+
+    max_len = MAX_LEN
+
+   load_components() subsequently overrides max_len from the checkpoint's
+   saved `model_config`, when present. New checkpoints also carry positional
+   encoding buffers, so this fallback is only for older/incomplete checkpoints.
+
+Do not hardcode D_MODEL, NUM_HEADS, NUM_LAYERS, or D_FF to the new training
+values in inspector.py. New checkpoints contain model_config and the loader
+should rebuild the model from that saved configuration.

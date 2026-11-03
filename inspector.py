@@ -41,26 +41,39 @@ NUM_HEADS = 4
 NUM_LAYERS = 2
 D_FF = 512
 MAX_LEN = 128
-MAX_NEW_TOKENS = 40
+MAX_NEW_TOKENS = 191
 
 # Beam search hyperparameters
 BEAM_SIZE = 5           # number of candidate sequences to keep at each step
 LENGTH_PENALTY = 0.6    # <1.0 favors shorter sequences, >1.0 favors longer ones
 
 
-def _infer_model_dims(state_dict: dict) -> dict:
-    """
-    Recupera as dimensões que podem ser identificadas pelos pesos.
 
-    Atenção:
-        O número de cabeças não pode ser inferido diretamente
-        pelos pesos dessa implementação de MultiHeadAttention.
-        Para checkpoints antigos, utiliza-se o maior divisor
-        de d_model que não ultrapasse 8.
+def _infer_model_dims(
+    state_dict: dict,
+    saved_config: dict | None = None,
+) -> dict:
     """
+    Recupera as dimensões da arquitetura pelos pesos e,
+    quando disponível, pela configuração salva no checkpoint.
+
+    O número de cabeças não pode ser recuperado diretamente
+    dos pesos da MultiHeadAttention. Para checkpoints novos,
+    utiliza a configuração salva. Para checkpoints antigos,
+    utiliza NUM_HEADS como estimativa.
+    """
+
+    if saved_config is None:
+        saved_config = {}
+
+    if not isinstance(saved_config, dict):
+        raise ValueError(
+            "Configuração inválida no checkpoint: "
+            "model_config precisa ser um dicionário."
+        )
 
     # ---------------------------------------------------------------
-    # Dimensões dos embeddings
+    # 1. Dimensões dos embeddings
     # ---------------------------------------------------------------
     emb_weight = state_dict.get("encoder.embedding.weight")
 
@@ -73,7 +86,7 @@ def _infer_model_dims(state_dict: dict) -> dict:
     d_model = int(emb_weight.shape[1])
 
     # ---------------------------------------------------------------
-    # Número de camadas do encoder
+    # 2. Número de camadas
     # ---------------------------------------------------------------
     encoder_layers = 0
 
@@ -83,9 +96,6 @@ def _infer_model_dims(state_dict: dict) -> dict:
     ):
         encoder_layers += 1
 
-    # ---------------------------------------------------------------
-    # Número de camadas do decoder
-    # ---------------------------------------------------------------
     decoder_layers = 0
 
     while (
@@ -108,9 +118,11 @@ def _infer_model_dims(state_dict: dict) -> dict:
     num_layers = encoder_layers
 
     # ---------------------------------------------------------------
-    # Dimensão feed-forward
+    # 3. Dimensão feed-forward
     # ---------------------------------------------------------------
-    ffn_weight = state_dict.get("encoder.layers.0.ffn.0.weight")
+    ffn_weight = state_dict.get(
+        "encoder.layers.0.ffn.0.weight"
+    )
 
     if ffn_weight is None:
         raise ValueError(
@@ -120,29 +132,55 @@ def _infer_model_dims(state_dict: dict) -> dict:
     d_ff = int(ffn_weight.shape[0])
 
     # ---------------------------------------------------------------
-    # Comprimento máximo de sequência
+    # 4. Comprimento máximo de sequência
     # ---------------------------------------------------------------
-    # Sempre prioriza o max_len salvo no checkpoint (pos_enc.pe).
-    # Isso evita mismatch entre o modelo treinado e o modelo inferido.
-    positional_encoding = state_dict.get("encoder.pos_enc.pe")
+    encoder_pe = state_dict.get("encoder.pos_enc.pe")
+    decoder_pe = state_dict.get("decoder.pos_enc.pe")
 
-    if positional_encoding is not None:
-        max_len = int(positional_encoding.shape[1])
+    positional_buffers = [
+        buffer
+        for buffer in (encoder_pe, decoder_pe)
+        if buffer is not None
+    ]
+
+    if positional_buffers:
+        lengths = {
+            int(buffer.shape[1])
+            for buffer in positional_buffers
+        }
+
+        if len(lengths) != 1:
+            raise ValueError(
+                "Encoder e decoder possuem comprimentos "
+                "posicionais incompatíveis."
+            )
+
+        max_len = lengths.pop()
+
     else:
-        # Fallback: tenta ler do model_config, depois do MAX_LEN hardcoded
-        max_len = int(saved_config.get("max_len", MAX_LEN)) if saved_config else MAX_LEN
+        # Compatibilidade com checkpoints antigos.
+        # Não existe buffer posicional para recuperar esse valor.
+        max_len = int(
+            saved_config.get("max_len", MAX_LEN)
+        )
 
     # ---------------------------------------------------------------
-    # Número de cabeças
+    # 5. Número de cabeças
     # ---------------------------------------------------------------
-    # Em checkpoints antigos, essa informação não está registrada.
-    num_heads = min(NUM_HEADS, d_model)
+    if "num_heads" in saved_config:
+        num_heads = int(saved_config["num_heads"])
+    else:
+        # Checkpoints antigos não armazenam essa informação.
+        num_heads = min(NUM_HEADS, d_model)
 
-    while num_heads > 1 and d_model % num_heads != 0:
-        num_heads -= 1
+        while num_heads > 1 and d_model % num_heads != 0:
+            num_heads -= 1
 
-    if d_model % num_heads != 0:
-        num_heads = 1
+    if num_heads <= 0 or d_model % num_heads != 0:
+        raise ValueError(
+            f"Configuração inválida: d_model={d_model} "
+            f"não é divisível por num_heads={num_heads}."
+        )
 
     return {
         "vocab_size": vocab_size,
@@ -152,6 +190,7 @@ def _infer_model_dims(state_dict: dict) -> dict:
         "d_ff": d_ff,
         "max_len": max_len,
     }
+
 
 
 def load_components() -> tuple:
@@ -203,10 +242,18 @@ def load_components() -> tuple:
     if is_new_checkpoint:
         state_dict = checkpoint["model_state_dict"]
 
-        saved_config = checkpoint.get("model_config", {})
+        saved_config = checkpoint.get("model_config") or {}
 
-        # Primeiro recupera o que for possível pelos pesos.
-        dims = _infer_model_dims(state_dict)
+        if not isinstance(saved_config, dict):
+            raise ValueError(
+                "Checkpoint inválido: model_config precisa ser um dicionário."
+            )
+
+        # Recupera as dimensões usando os pesos e a configuração salva.
+        dims = _infer_model_dims(
+            state_dict,
+            saved_config,
+        )
 
         # Depois sobrescreve com a configuração exata salva.
         config_keys = (

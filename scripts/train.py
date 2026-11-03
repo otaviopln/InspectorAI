@@ -1,579 +1,279 @@
-"""Training loop for Inspector AI."""
+"""Train InspectorAI on a reviewed, pre-split dataset.
+
+Expected input: inspector/data/processed/prepared_dataset.json
+Generated artifacts:
+  inspector/models/tokenizer_vocab.json
+  inspector/models/inspector_model.pth
+  inspector/models/training_metrics.json
+
+The dataset must be prepared with scripts/prepare_dataset.py first.
+"""
 
 from __future__ import annotations
 
 import json
 import os
-import shutil
 import random
+import shutil
 import sys
-
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any
 
 import torch
 import torch.nn as nn
 
-# ---------------------------------------------------------------
-# Diretórios do projeto
-# ---------------------------------------------------------------
 ROOT = Path(__file__).resolve().parents[1]
-
 SCRIPTS_DIR = ROOT / "scripts"
-
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-# ---------------------------------------------------------------
-# Importações locais
-# ---------------------------------------------------------------
-from tokenizer import (
+from tokenizer import (  # noqa: E402
     BPETokenizer,
     SOS_IDX,
     EOS_IDX,
     PAD_IDX,
     UNK_IDX,
-    SPECIAL_TOKENS,
 )
+from model import InspectorTransformer  # noqa: E402
 
-from model import InspectorTransformer
-
-# ---------------------------------------------------------------
-# Caminhos
-# ---------------------------------------------------------------
-EXPANDED_DATASET_PATH = (
-    ROOT / "inspector" / "data" / "processed"
-    / "expanded_dataset.json"
+PREPARED_DATASET_PATH = (
+    ROOT / "inspector" / "data" / "processed" / "prepared_dataset.json"
 )
+TOKENIZER_PATH = ROOT / "inspector" / "models" / "tokenizer_vocab.json"
+MODEL_PATH = ROOT / "inspector" / "models" / "inspector_model.pth"
+METRICS_PATH = ROOT / "inspector" / "models" / "training_metrics.json"
+STAGING_MODEL_PATH = ROOT / "inspector" / "models" / ".inspector_model.pth.tmp"
+STAGING_TOKENIZER_PATH = ROOT / "inspector" / "models" / ".tokenizer_vocab.json.tmp"
 
-OA_DATASET_PATH = (
-    ROOT / "inspector" / "data" / "processed"
-    / "openassistant_dataset.json"
-)
-
-MOCK_DATASET_PATH = (
-    ROOT / "inspector" / "data" / "processed"
-    / "mock_dataset.json"
-)
-
-TOKENIZER_PATH = (
-    ROOT / "inspector" / "models" / "tokenizer_vocab.json"
-)
-
-MODEL_PATH = (
-    ROOT / "inspector" / "models" / "inspector_model.pth"
-)
-
-# Prioridade: expanded > openassistant > mock
-DATASET_PATH = (
-    EXPANDED_DATASET_PATH
-    if EXPANDED_DATASET_PATH.exists()
-    else OA_DATASET_PATH
-    if OA_DATASET_PATH.exists()
-    else MOCK_DATASET_PATH
-)
-
-# ---------------------------------------------------------------
-# Configuração do dispositivo
-# ---------------------------------------------------------------
-_FORCED_DEVICE = os.environ.get(
-    "INSPECTOR_DEVICE", ""
-).strip().lower()
-
-# ---------------------------------------------------------------
-# Configuração para treinamento em GPU CUDA
-# ---------------------------------------------------------------
-
+# Colab-friendly baseline. Do not scale these until the data pipeline is stable.
 VOCAB_SIZE = 3000
-
-# Hiperparâmetros para treinamento em GPU (Google Colab T4)
-# Para CPU local, reduza: D_MODEL=64, NUM_LAYERS=2, EPOCHS=3, MAX_PAIRS=3000
 D_MODEL = 256
 NUM_HEADS = 8
 NUM_LAYERS = 4
 D_FF = 1024
-
-MAX_LEN = 128
-
+MAX_LEN = 192
 BATCH_SIZE = 16
 EPOCHS = 20
 LR = 5e-4
-
-MAX_PAIRS = None  # Usar todos os pares disponíveis no dataset
 RETRAIN_TOKENIZER = True
 
-# Validação e Early Stopping
-VALIDATION_RATIO = 0.10
 RANDOM_SEED = 42
-
 EARLY_STOPPING_PATIENCE = 5
 MIN_DELTA = 0.0001
 
+_FORCED_DEVICE = os.environ.get("INSPECTOR_DEVICE", "").strip().lower()
+
 
 def pick_device() -> torch.device:
-    """Return the best available torch device.
-
-    Priority: user env var INSPECTOR_DEVICE > CUDA > DirectML > CPU.
-    """
-    if _FORCED_DEVICE in {"cpu", "cuda", "directml"}:
-        if _FORCED_DEVICE == "cuda" and not torch.cuda.is_available():
-            print("WARNING: INSPECTOR_DEVICE=cuda requested but CUDA is unavailable. Falling back to CPU.")
-            return torch.device("cpu")
-        if _FORCED_DEVICE == "directml":
-            try:
-                import torch_directml  # type: ignore
-                return torch_directml.device()
-            except Exception as exc:  # pragma: no cover
-                print(f"WARNING: DirectML unavailable ({exc}). Falling back to CPU.")
-                return torch.device("cpu")
-        return torch.device(_FORCED_DEVICE)
-
-    if torch.cuda.is_available():
+    if _FORCED_DEVICE == "cpu":
+        return torch.device("cpu")
+    if _FORCED_DEVICE == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("INSPECTOR_DEVICE=cuda, mas CUDA não está disponível.")
         return torch.device("cuda")
-
-    try:
-        import torch_directml  # type: ignore
-        if torch_directml.is_available():
+    if _FORCED_DEVICE == "directml":
+        try:
+            import torch_directml  # type: ignore
             return torch_directml.device()
-    except Exception:
-        pass
-
-    return torch.device("cpu")
+        except Exception as exc:
+            raise RuntimeError(f"DirectML não está disponível: {exc}") from exc
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 DEVICE = pick_device()
 
-def load_dataset_splits(
-    path: Path,
-) -> Dict[str, List[Tuple[str, str]]]:
-    """Carrega os conjuntos classificados do arquivo JSON."""
 
+def _records_to_pairs(records: Any, split_name: str) -> list[tuple[str, str]]:
+    if not isinstance(records, list) or not records:
+        raise ValueError(f"O conjunto '{split_name}' está vazio ou inválido.")
+
+    pairs: list[tuple[str, str]] = []
+    for index, record in enumerate(records):
+        if not isinstance(record, dict):
+            raise ValueError(f"Registro {index} de '{split_name}' não é um objeto.")
+        user_input = str(record.get("input", "")).strip()
+        target = str(record.get("target", "")).strip()
+        if not user_input or not target:
+            raise ValueError(
+                f"Registro {index} de '{split_name}' tem input/target vazio."
+            )
+        pairs.append((user_input, target))
+    return pairs
+
+
+def load_prepared_dataset(path: Path = PREPARED_DATASET_PATH):
+    """Load the explicit train/validation/test splits and guard against leakage."""
     if not path.exists():
         raise FileNotFoundError(
-            f"Dataset não encontrado: {path}"
+            f"Dataset preparado não encontrado: {path}\n"
+            "Execute primeiro: python scripts/prepare_dataset.py"
         )
 
-    with path.open("r", encoding="utf-8") as file:
-        data = json.load(file)
+    with path.open("r", encoding="utf-8") as stream:
+        data = json.load(stream)
 
-    raw_splits = data.get("splits", {})
-
-    if not isinstance(raw_splits, dict):
+    if data.get("schema_version") != "inspector.dataset.v2":
         raise ValueError(
-            "Formato inválido: 'splits' precisa ser um objeto."
+            "Schema incompatível. Esperado 'inspector.dataset.v2'. "
+            "Gere novamente com scripts/prepare_dataset.py."
         )
+    if data.get("language") != "en":
+        raise ValueError("Esta versão do treinamento espera dados em inglês.")
 
-    result: Dict[str, List[Tuple[str, str]]] = {}
+    splits = data.get("splits")
+    if not isinstance(splits, dict):
+        raise ValueError("O dataset precisa conter o objeto 'splits'.")
 
-    for split_name, entries in raw_splits.items():
-        if not isinstance(entries, list):
-            continue
+    train_records = splits.get("train")
+    validation_records = splits.get("validation")
+    test_records = splits.get("test")
 
-        pairs = []
+    train_pairs = _records_to_pairs(train_records, "train")
+    validation_pairs = _records_to_pairs(validation_records, "validation")
+    test_pairs = _records_to_pairs(test_records, "test")
 
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-
-            user_input = str(
-                entry.get("input", "")
-            ).strip()
-
-            target = str(
-                entry.get("target", "")
-            ).strip()
-
-            if user_input and target:
-                pairs.append((user_input, target))
-
-        if pairs:
-            result[split_name] = pairs
-
-    if not result:
-        raise ValueError(
-            "Nenhum exemplo válido foi encontrado no dataset."
-        )
-
-    return result
-
-def split_dataset(
-    dataset_splits: Dict[str, List[Tuple[str, str]]],
-    validation_ratio: float = VALIDATION_RATIO,
-    seed: int = RANDOM_SEED,
-) -> Tuple[
-    List[Tuple[str, str]],
-    List[Tuple[str, str]],
-]:
-    """
-    Separa os exemplos em treinamento e validação.
-
-    A divisão ocorre separadamente para cada categoria do dataset.
-    """
-
-    if not 0 < validation_ratio < 1:
-        raise ValueError(
-            "validation_ratio precisa estar entre 0 e 1."
-        )
-
-    rng = random.Random(seed)
-
-    train_pairs: List[Tuple[str, str]] = []
-    validation_pairs: List[Tuple[str, str]] = []
-
-    for category_pairs in dataset_splits.values():
-        pairs = list(category_pairs)
-        rng.shuffle(pairs)
-
-        # Uma categoria com somente um exemplo permanece no treino.
-        if len(pairs) < 2:
-            train_pairs.extend(pairs)
-            continue
-
-        validation_count = max(
-            1,
-            round(len(pairs) * validation_ratio),
-        )
-
-        # Garante pelo menos um exemplo de treinamento por categoria.
-        validation_count = min(
-            validation_count,
-            len(pairs) - 1,
-        )
-
-        validation_pairs.extend(
-            pairs[:validation_count]
-        )
-
-        train_pairs.extend(
-            pairs[validation_count:]
-        )
-
-    # Se todas as categorias tinham apenas um exemplo,
-    # desloca um exemplo para validação, desde que seja possível.
-    if not validation_pairs:
-        if len(train_pairs) < 2:
-            raise ValueError(
-                "São necessários pelo menos dois exemplos "
-                "para criar treinamento e validação."
-            )
-
-        validation_pairs.append(train_pairs.pop())
-
-    rng.shuffle(train_pairs)
-    rng.shuffle(validation_pairs)
-
-    if not train_pairs or not validation_pairs:
-        raise ValueError(
-            "A divisão produziu um conjunto vazio."
-        )
-
-    return train_pairs, validation_pairs
-
-def limit_dataset_splits(
-    dataset_splits: Dict[str, List[Tuple[str, str]]],
-    max_pairs: int,
-    seed: int = RANDOM_SEED,
-) -> Dict[str, List[Tuple[str, str]]]:
-    """
-    Limita o dataset preservando suas categorias.
-
-    Garante, sempre que possível:
-        - Pelo menos um exemplo de treinamento por categoria.
-        - Pelo menos um exemplo de validação por categoria
-          que possua dois ou mais registros.
-    """
-
-    if max_pairs < 1:
-        raise ValueError(
-            "MAX_PAIRS precisa ser maior que zero."
-        )
-
-    available = {
-        name: list(pairs)
-        for name, pairs in dataset_splits.items()
-        if pairs
+    group_sets = {
+        name: {
+            str(record.get("group_id", "")).strip()
+            for record in splits[name]
+        }
+        for name in ("train", "validation", "test")
     }
+    if group_sets["train"] & group_sets["validation"]:
+        raise ValueError("Vazamento de group_id entre train e validation.")
+    if group_sets["train"] & group_sets["test"]:
+        raise ValueError("Vazamento de group_id entre train e test.")
+    if group_sets["validation"] & group_sets["test"]:
+        raise ValueError("Vazamento de group_id entre validation e test.")
 
-    if not available:
-        raise ValueError(
-            "Não existem categorias com exemplos válidos."
-        )
+    return train_pairs, validation_pairs, test_pairs, data
 
-    total = sum(
-        len(pairs)
-        for pairs in available.values()
-    )
-
-    if max_pairs >= total:
-        return available
-
-    # Reserva dois exemplos para categorias que permitem
-    # ter treinamento e validação.
-    quotas = {
-        name: min(2, len(pairs))
-        for name, pairs in available.items()
-    }
-
-    minimum_required = sum(quotas.values())
-
-    if max_pairs < minimum_required:
-        raise ValueError(
-            f"MAX_PAIRS precisa ser pelo menos {minimum_required} "
-            "para preservar as categorias e permitir uma divisão "
-            "adequada entre treinamento e validação."
-        )
-
-    remaining = max_pairs - minimum_required
-
-    # Distribui as vagas restantes proporcionalmente.
-    while remaining > 0:
-        candidates = [
-            name
-            for name, pairs in available.items()
-            if quotas[name] < len(pairs)
-        ]
-
-        if not candidates:
-            break
-
-        selected = max(
-            candidates,
-            key=lambda name: (
-                len(available[name]) / (quotas[name] + 1)
-            ),
-        )
-
-        quotas[selected] += 1
-        remaining -= 1
-
-    # Embaralha e seleciona os exemplos de cada categoria.
-    rng = random.Random(seed)
-
-    limited = {}
-
-    for name, pairs in available.items():
-        shuffled = list(pairs)
-        rng.shuffle(shuffled)
-
-        limited[name] = shuffled[:quotas[name]]
-
-    return limited
 
 def pad_sequences(
-    seqs: List[List[int]], pad_val: int = PAD_IDX, max_len: int = MAX_LEN
+    sequences: list[list[int]],
+    pad_value: int = PAD_IDX,
+    max_len: int = MAX_LEN,
 ) -> torch.Tensor:
-    """Pad/truncate a list of id-sequences to the same length."""
-    padded: List[List[int]] = []
-    for seq in seqs:
-        if len(seq) > max_len:
-            seq = seq[:max_len]
-        padded.append(seq + [pad_val] * (max_len - len(seq)))
+    if max_len < 2:
+        raise ValueError("MAX_LEN precisa ser pelo menos 2.")
+    padded: list[list[int]] = []
+    for sequence in sequences:
+        sequence = sequence[:max_len]
+        padded.append(sequence + [pad_value] * (max_len - len(sequence)))
     return torch.tensor(padded, dtype=torch.long)
 
 
 def collate_batch(
-    batch: List[Tuple[str, str]],
+    batch: list[tuple[str, str]],
     tokenizer: BPETokenizer,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Prepara entrada, entrada do decoder e alvos."""
-
-    if MAX_LEN < 2:
-        raise ValueError(
-            "MAX_LEN precisa ser pelo menos 2."
-        )
-
-    src_ids = []
-    tgt_input_ids = []
-    tgt_label_ids = []
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Create source, shifted decoder input and next-token labels."""
+    src_ids: list[list[int]] = []
+    tgt_input_ids: list[list[int]] = []
+    tgt_label_ids: list[list[int]] = []
 
     for user_input, target in batch:
-        source = tokenizer.encode(user_input)[:MAX_LEN]
-
+        source = tokenizer.encode(user_input)
         if not source:
             source = [UNK_IDX]
-
+        if len(source) > MAX_LEN:
+            raise ValueError(
+                f"A entrada excede MAX_LEN={MAX_LEN} após tokenização: "
+                f"{user_input[:100]!r}. Aumente MAX_LEN ou revise o exemplo."
+            )
         src_ids.append(source)
 
-        target_tokens = tokenizer.encode(
-            target
-        )[:MAX_LEN - 1]
-
-        full_target = (
-            [SOS_IDX]
-            + target_tokens
-            + [EOS_IDX]
-        )
-
+        target_tokens = tokenizer.encode(target)
+        if len(target_tokens) > MAX_LEN - 1:
+            raise ValueError(
+                f"O target excede MAX_LEN={MAX_LEN} após tokenização. "
+                "Aumente MAX_LEN ou torne o target mais conciso. "
+                f"Início do target: {target[:100]!r}"
+            )
+        full_target = [SOS_IDX] + target_tokens + [EOS_IDX]
         tgt_input_ids.append(full_target[:-1])
         tgt_label_ids.append(full_target[1:])
 
-    src = pad_sequences(src_ids)
-    tgt_input = pad_sequences(tgt_input_ids)
-    tgt_labels = pad_sequences(tgt_label_ids)
+    return (
+        pad_sequences(src_ids),
+        pad_sequences(tgt_input_ids),
+        pad_sequences(tgt_label_ids),
+    )
 
-    return src, tgt_input, tgt_labels
 
 def evaluate_loss(
     model: InspectorTransformer,
-    pairs: List[Tuple[str, str]],
+    pairs: list[tuple[str, str]],
     tokenizer: BPETokenizer,
     criterion: nn.Module,
 ) -> float:
-    """Calcula a loss média por token no conjunto de validação."""
-
     if not pairs:
-        raise ValueError(
-            "O conjunto de validação está vazio."
-        )
+        raise ValueError("Não é possível avaliar um conjunto vazio.")
 
     model.eval()
-
     total_loss = 0.0
     total_tokens = 0
 
     with torch.no_grad():
-        for i in range(0, len(pairs), BATCH_SIZE):
-            batch = pairs[i:i + BATCH_SIZE]
-
-            src, tgt_input, tgt_labels = collate_batch(
-                batch,
-                tokenizer,
-            )
-
+        for start in range(0, len(pairs), BATCH_SIZE):
+            batch = pairs[start : start + BATCH_SIZE]
+            src, tgt_input, tgt_labels = collate_batch(batch, tokenizer)
             src = src.to(DEVICE)
             tgt_input = tgt_input.to(DEVICE)
             tgt_labels = tgt_labels.to(DEVICE)
 
-            logits = model(
-                src,
-                tgt_input,
-            )
-
+            logits = model(src, tgt_input)
             loss_sum = criterion(
                 logits.reshape(-1, logits.size(-1)),
                 tgt_labels.reshape(-1),
             )
-
-            token_count = int(
-                (tgt_labels != PAD_IDX).sum().item()
-            )
-
-            total_loss += loss_sum.item()
+            token_count = int((tgt_labels != PAD_IDX).sum().item())
+            total_loss += float(loss_sum.item())
             total_tokens += token_count
 
     if total_tokens == 0:
-        raise ValueError(
-            "Nenhum token válido no conjunto de validação."
-        )
-
+        raise RuntimeError("Nenhum token válido encontrado durante a avaliação.")
     return total_loss / total_tokens
 
 
 def main() -> None:
-    backup_dir_env = os.environ.get(
-    "INSPECTOR_BACKUP_DIR"
-    )
+    random.seed(RANDOM_SEED)
+    torch.manual_seed(RANDOM_SEED)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(RANDOM_SEED)
 
-    BACKUP_DIR = (
-        Path(backup_dir_env)
-        if backup_dir_env
-        else None
-    )
+    train_pairs, validation_pairs, test_pairs, dataset_info = load_prepared_dataset()
 
-    if BACKUP_DIR is not None:
-        BACKUP_DIR.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
-        print(
-            f"Backups serão salvos em: {BACKUP_DIR}"
-        )
-    # 1. Carrega o dataset.
-    dataset_splits = load_dataset_splits(DATASET_PATH)
-
-    print("MAX_PAIRS configurado:", MAX_PAIRS)
-
-    # 2. Aplica o limite antes da divisão.
-    if MAX_PAIRS is not None:
-        dataset_splits = limit_dataset_splits(
-            dataset_splits,
-            MAX_PAIRS,
-            seed=RANDOM_SEED,
-        )
-
-    total_examples = sum(
-        len(pairs)
-        for pairs in dataset_splits.values()
-    )
-
-    print("Total após aplicação do limite:", total_examples)
-
-    # 3. Divide em treinamento e validação.
-    train_pairs, validation_pairs = split_dataset(
-        dataset_splits,
-        validation_ratio=VALIDATION_RATIO,
-        seed=RANDOM_SEED,
-    )
-
-    print(f"Training examples: {len(train_pairs)}")
-    print(f"Validation examples: {len(validation_pairs)}")
-
-    # Continue aqui com o restante do main()
-    # que já implementamos.
-
-    # ---------------------------------------------------------------
-    # Treinamento ou reutilização do tokenizer
-    # ---------------------------------------------------------------
-
-    train_texts = [
-        text
-        for pair in train_pairs
-        for text in pair
-    ]
-
-    if (
-        TOKENIZER_PATH.exists()
-        and not RETRAIN_TOKENIZER
-    ):
-
-        print("Loading previously trained tokenizer...")
-
-        tokenizer = BPETokenizer.load(
-            TOKENIZER_PATH
-        )
-
-    else:
-
-        print("Training new Rust-accelerated BPE tokenizer...")
-
-        tokenizer = BPETokenizer(
-            vocab_size=VOCAB_SIZE
-        )
-
-        tokenizer.train(
-            train_texts,
-        )
-
-        tokenizer.save(
-            TOKENIZER_PATH
-        )
-
-    # Tamanho real do vocabulário.
-    vocab_size = len(tokenizer.vocab)
-
+    print(f"Device: {DEVICE}")
+    if DEVICE.type == "cuda":
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
     print(
-        f"Final tokenizer vocabulary: {vocab_size}"
+        "Examples | "
+        f"train={len(train_pairs)} | "
+        f"validation={len(validation_pairs)} | "
+        f"test={len(test_pairs)}"
     )
-
-    if vocab_size <= EOS_IDX:
-        raise ValueError(
-            "Invalid tokenizer vocabulary."
+    if len(train_pairs) < 400:
+        print(
+            "WARNING: fewer than 400 training examples. This run is useful "
+            "for pipeline smoke-testing, not for claiming generalization."
         )
 
-    # ---------------------------------------------------------------
-    # 3. Cria modelo, loss e otimizador
-    # ---------------------------------------------------------------
+    # Fit tokenizer only on training data to avoid validation/test leakage.
+    train_texts = [text for pair in train_pairs for text in pair]
+    tokenizer_is_staged = False
+    if RETRAIN_TOKENIZER or not TOKENIZER_PATH.exists():
+        tokenizer = BPETokenizer(vocab_size=VOCAB_SIZE)
+        tokenizer.train(train_texts)
+        tokenizer.save(STAGING_TOKENIZER_PATH)
+        tokenizer_is_staged = True
+    else:
+        tokenizer = BPETokenizer.load(TOKENIZER_PATH)
+
+    vocab_size = len(tokenizer.vocab)
+    if vocab_size <= EOS_IDX:
+        raise ValueError(f"Vocabulário inválido: {vocab_size} tokens.")
+
     model_config = {
         "vocab_size": vocab_size,
         "d_model": D_MODEL,
@@ -583,135 +283,76 @@ def main() -> None:
         "max_len": MAX_LEN,
         "pad_idx": PAD_IDX,
     }
+    model = InspectorTransformer(**model_config).to(DEVICE)
 
-    model = InspectorTransformer(
-        **model_config,
-    ).to(DEVICE)
-
-    # Soma as perdas para calcular a média por token.
     criterion = nn.CrossEntropyLoss(
         ignore_index=PAD_IDX,
         reduction="sum",
     )
+    optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=LR,
-    )
-
-    # ---------------------------------------------------------------
-    # 4. Treinamento e validação
-    # ---------------------------------------------------------------
     best_validation_loss = float("inf")
+    best_state_dict: dict[str, torch.Tensor] | None = None
     epochs_without_improvement = 0
-
     rng = random.Random(RANDOM_SEED)
-
-    print(
-        f"Starting training: epochs={EPOCHS}, "
-        f"batch_size={BATCH_SIZE}, "
-        f"learning_rate={LR}"
-    )
 
     for epoch in range(1, EPOCHS + 1):
         model.train()
+        epoch_pairs = list(train_pairs)
+        rng.shuffle(epoch_pairs)
+        total_loss = 0.0
+        total_tokens = 0
 
-        rng.shuffle(train_pairs)
-
-        total_train_loss = 0.0
-        total_train_tokens = 0
-
-        for i in range(0, len(train_pairs), BATCH_SIZE):
-            batch = train_pairs[i:i + BATCH_SIZE]
-
-            src, tgt_input, tgt_labels = collate_batch(
-                batch,
-                tokenizer,
-            )
-
+        for start in range(0, len(epoch_pairs), BATCH_SIZE):
+            batch = epoch_pairs[start : start + BATCH_SIZE]
+            src, tgt_input, tgt_labels = collate_batch(batch, tokenizer)
             src = src.to(DEVICE)
             tgt_input = tgt_input.to(DEVICE)
             tgt_labels = tgt_labels.to(DEVICE)
 
-            logits = model(
-                src,
-                tgt_input,
-            )
-
+            logits = model(src, tgt_input)
             loss_sum = criterion(
                 logits.reshape(-1, logits.size(-1)),
                 tgt_labels.reshape(-1),
             )
-
-            token_count = int(
-                (tgt_labels != PAD_IDX).sum().item()
-            )
-
+            token_count = int((tgt_labels != PAD_IDX).sum().item())
             if token_count == 0:
                 continue
 
-            # Backpropaga a média por token.
             loss = loss_sum / token_count
-
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
-
-            # Evita gradientes excessivamente grandes.
-            torch.nn.utils.clip_grad_norm_(
-                model.parameters(),
-                max_norm=1.0,
-            )
-
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
-            total_train_loss += loss_sum.item()
-            total_train_tokens += token_count
+            total_loss += float(loss_sum.item())
+            total_tokens += token_count
 
-        if total_train_tokens == 0:
-            raise RuntimeError(
-                "Nenhum token válido foi utilizado no treinamento."
-            )
+        if total_tokens == 0:
+            raise RuntimeError("Nenhum token válido foi utilizado no treinamento.")
 
-        train_loss = (
-            total_train_loss / total_train_tokens
-        )
-
+        train_loss = total_loss / total_tokens
         validation_loss = evaluate_loss(
-            model,
-            validation_pairs,
-            tokenizer,
-            criterion,
+            model, validation_pairs, tokenizer, criterion
         )
-
         print(
             f"Epoch {epoch:02d}/{EPOCHS} | "
             f"Train loss: {train_loss:.4f} | "
             f"Validation loss: {validation_loss:.4f}"
         )
 
-        # -----------------------------------------------------------
-        # 5. Salva somente quando há melhora na validação
-        # -----------------------------------------------------------
-        improved = (
-            validation_loss
-            < best_validation_loss - MIN_DELTA
-        )
-
-        if improved:
+        if validation_loss < best_validation_loss - MIN_DELTA:
             best_validation_loss = validation_loss
             epochs_without_improvement = 0
+            best_state_dict = {
+                key: value.detach().cpu().clone()
+                for key, value in model.state_dict().items()
+            }
 
-            MODEL_PATH.parent.mkdir(
-                parents=True,
-                exist_ok=True,
-            )
-
+            MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
             checkpoint = {
-                "format_version": 2,
-                "model_state_dict": {
-                    key: value.detach().cpu()
-                    for key, value in model.state_dict().items()
-                },
+                "format_version": 3,
+                "model_state_dict": best_state_dict,
                 "model_config": model_config,
                 "training_config": {
                     "epoch": epoch,
@@ -720,53 +361,98 @@ def main() -> None:
                     "learning_rate": LR,
                     "validation_loss": validation_loss,
                     "random_seed": RANDOM_SEED,
+                    "language": "en",
+                    "decision_tokens": ["CLARIFY", "FORMAT_RCFO"],
                 },
-                "optimizer_state_dict": optimizer.state_dict(),
+                "dataset_info": {
+                    "schema_version": dataset_info.get("schema_version"),
+                    "split_strategy": dataset_info.get("split_strategy"),
+                    "train_examples": len(train_pairs),
+                    "validation_examples": len(validation_pairs),
+                    "test_examples": len(test_pairs),
+                },
             }
-
-            torch.save(
-                checkpoint,
-                MODEL_PATH,
-            )
-
-            if BACKUP_DIR is not None:
-              shutil.copy2(
-                  MODEL_PATH,
-                  BACKUP_DIR / "inspector_model.pth",
-              )
-
-            print(
-                f"Best checkpoint saved. "
-                f"Validation loss: {validation_loss:.4f}"
-            )
-
+            torch.save(checkpoint, STAGING_MODEL_PATH)
+            print(f"  Best checkpoint staged: val_loss={validation_loss:.4f}")
         else:
             epochs_without_improvement += 1
-
             print(
-                "Validation did not improve: "
-                f"{epochs_without_improvement}/"
-                f"{EARLY_STOPPING_PATIENCE}"
+                "  No validation improvement: "
+                f"{epochs_without_improvement}/{EARLY_STOPPING_PATIENCE}"
             )
 
-        # -----------------------------------------------------------
-        # 6. Early stopping
-        # -----------------------------------------------------------
-        if (
-            epochs_without_improvement
-            >= EARLY_STOPPING_PATIENCE
-        ):
-            print(
-                "Early stopping: validation loss did not improve."
-            )
+        if epochs_without_improvement >= EARLY_STOPPING_PATIENCE:
+            print("Early stopping.")
             break
 
+    if best_state_dict is None:
+        raise RuntimeError("Nenhum checkpoint válido foi produzido.")
+
+    # Restore best validation checkpoint before touching the held-out test set.
+    model.load_state_dict(best_state_dict)
+    test_loss = evaluate_loss(model, test_pairs, tokenizer, criterion)
+
+    # Commit the new model/tokenizer only after training and held-out
+    # evaluation have completed. A failed run therefore leaves the old pair intact.
+    model_backup = MODEL_PATH.with_name(".inspector_model.pth.backup")
+    tokenizer_backup = TOKENIZER_PATH.with_name(".tokenizer_vocab.json.backup")
+    had_model = MODEL_PATH.exists()
+    had_tokenizer = TOKENIZER_PATH.exists()
+
+    try:
+        if had_model:
+            shutil.copy2(MODEL_PATH, model_backup)
+        if tokenizer_is_staged and had_tokenizer:
+            shutil.copy2(TOKENIZER_PATH, tokenizer_backup)
+
+        if tokenizer_is_staged:
+            os.replace(STAGING_TOKENIZER_PATH, TOKENIZER_PATH)
+        os.replace(STAGING_MODEL_PATH, MODEL_PATH)
+    except Exception:
+        # Restore the previous matching pair if either replacement fails.
+        if had_model and model_backup.exists():
+            os.replace(model_backup, MODEL_PATH)
+        elif not had_model and MODEL_PATH.exists():
+            MODEL_PATH.unlink()
+
+        if tokenizer_is_staged:
+            if had_tokenizer and tokenizer_backup.exists():
+                os.replace(tokenizer_backup, TOKENIZER_PATH)
+            elif not had_tokenizer and TOKENIZER_PATH.exists():
+                TOKENIZER_PATH.unlink()
+        raise
+    finally:
+        model_backup.unlink(missing_ok=True)
+        tokenizer_backup.unlink(missing_ok=True)
+
+    metrics = {
+        "best_validation_loss": best_validation_loss,
+        "test_loss": test_loss,
+        "train_examples": len(train_pairs),
+        "validation_examples": len(validation_pairs),
+        "test_examples": len(test_pairs),
+        "device": str(DEVICE),
+        "model_config": model_config,
+    }
+    METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with METRICS_PATH.open("w", encoding="utf-8") as stream:
+        json.dump(metrics, stream, ensure_ascii=False, indent=2)
+
+    backup_dir_env = os.environ.get("INSPECTOR_BACKUP_DIR", "").strip()
+    if backup_dir_env:
+        backup_dir = Path(backup_dir_env)
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(MODEL_PATH, backup_dir / MODEL_PATH.name)
+        shutil.copy2(TOKENIZER_PATH, backup_dir / TOKENIZER_PATH.name)
+        shutil.copy2(METRICS_PATH, backup_dir / METRICS_PATH.name)
+
     print("\nTraining completed.")
-    print(
-        f"Best validation loss: {best_validation_loss:.4f}"
-    )
-    print(f"Checkpoint: {MODEL_PATH}")
+    print(f"Best validation loss: {best_validation_loss:.4f}")
+    print(f"Held-out test loss: {test_loss:.4f}")
+    print(f"Model: {MODEL_PATH}")
     print(f"Tokenizer: {TOKENIZER_PATH}")
+    print(f"Metrics: {METRICS_PATH}")
+
 
 if __name__ == "__main__":
     main()

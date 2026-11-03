@@ -1,0 +1,17 @@
+{
+  "best_validation_loss": 3.3782731123483214,
+  "test_loss": 3.3785319393511126,
+  "train_examples": 416,
+  "validation_examples": 52,
+  "test_examples": 52,
+  "device": "cuda",
+  "model_config": {
+    "vocab_size": 3000,
+    "d_model": 256,
+    "num_heads": 8,
+    "num_layers": 4,
+    "d_ff": 1024,
+    "max_len": 192,
+    "pad_idx": 0
+  }
+}

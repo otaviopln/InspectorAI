@@ -1,0 +1,48 @@
+{
+  "schema_version": "inspector.dataset.v2",
+  "seed": 42,
+  "pending_or_rejected_records_excluded": 0,
+  "counts": {
+    "train": 416,
+    "validation": 52,
+    "test": 52,
+    "total": 520
+  },
+  "by_task": {
+    "train": {
+      "clarify": 276,
+      "format_rcfo": 140
+    },
+    "validation": {
+      "clarify": 35,
+      "format_rcfo": 17
+    },
+    "test": {
+      "clarify": 35,
+      "format_rcfo": 17
+    }
+  },
+  "by_ambiguity": {
+    "train": {
+      "partial": 143,
+      "clear": 140,
+      "vague": 133
+    },
+    "validation": {
+      "vague": 17,
+      "clear": 17,
+      "partial": 18
+    },
+    "test": {
+      "partial": 18,
+      "clear": 17,
+      "vague": 17
+    }
+  },
+  "unique_groups": {
+    "train": 416,
+    "validation": 52,
+    "test": 52
+  },
+  "source_sha256": "b572b1ae054be81a587a523e9e9e10939a4b4758ef6d5e7a1585be25706b2e98"
+}
