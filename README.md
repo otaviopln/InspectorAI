@@ -242,10 +242,10 @@ The GUI requires the trained model and tokenizer artifacts to be available.
 Launch the interactive terminal interface:
 
 ```powershell
-python inspector.py
+python -m inspector
 ```
 
-The terminal application loads the tokenizer and trained Transformer, accepts user prompts, and generates responses.
+The package entry point (`python -m inspector`) delegates to `inspector/cli.py`. Both the terminal application and desktop GUI import the same inference implementation from `inspector/engine.py`; checkpoint loading, architecture validation, and response generation are maintained in one place.\n\nThe previous root-level `inspector.py` engine has been removed to avoid a module/package name collision with the `inspector/` package. The compatibility launcher `python scripts/run.py` remains available.
 
 ## Training Configuration
 
