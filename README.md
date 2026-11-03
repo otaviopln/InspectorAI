@@ -149,44 +149,45 @@ The tokenizer and model artifacts are staged and replace the previous artifacts 
 InspectorAI/
 ├── README.md
 ├── History.md
+├── LICENSE
 ├── requirements.txt
 ├── .gitignore
-├── LICENSE
 │
-├── inspector.py
 ├── inspector_gui.py
 │
 ├── inspector/
-│   ├── __init__.py
+│   ├── __init__.py       # Public package API
+│   ├── __main__.py      # python -m inspector
+│   ├── cli.py           # Terminal interface
+│   ├── engine.py        # Single inference engine
 │   ├── config.py
-│   │
+│   ├── core/            # Legacy heuristic components
 │   ├── data/
 │   │   ├── raw/
-│   │   │   └── curated_examples.jsonl
-│   │   │
 │   │   └── processed/
-│   │       ├── prepared_dataset.json
-│   │       └── dataset_report.json
-│   │
-│   ├── models/
-│   │   ├── inspector_model.pth
-│   │   ├── tokenizer_vocab.json
-│   │   └── training_metrics.json
-│   │
-│   └── tests/
+│   └── models/          # Tokenizer and generated model artifacts
 │
 ├── scripts/
-│   ├── __init__.py
 │   ├── model.py
 │   ├── tokenizer.py
 │   ├── train.py
 │   ├── prepare_dataset.py
+│   ├── inspect_sequence_lengths.py
+│   ├── run.py           # Backward-compatible CLI launcher
 │   └── colab_train_v2.ipynb
 │
 └── tests/
 ```
 
-This tree describes the current training and inference architecture. Generated artifacts and development files may vary depending on the working environment.
+The inference engine lives exclusively in `inspector/engine.py`. The desktop GUI and terminal interface import `load_components()` and `generate_response()` from this module. The root-level `inspector.py` was removed to eliminate the collision between a Python module and the `inspector/` package.
+
+Run the terminal interface with:
+
+```powershell
+python -m inspector
+```
+
+The older `python scripts/run.py` command remains available as a compatibility launcher.
 
 ## Installation
 
