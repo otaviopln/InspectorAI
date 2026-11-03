@@ -579,3 +579,37 @@ Use this expanded dataset (or merge it with `openassistant_dataset.json`) to ret
 - Your local machine has **Intel Iris Xe Graphics** (integrated, ~2 GB shared) and PyTorch is installed without CUDA. Local training beyond the small MVP will be slow. Use Colab for production-quality training.
 - Inference (`inspector.py`) runs fine on CPU — no GPU needed to use the trained model.
 - OpenAssistant `oasst1` is Apache 2.0 licensed — safe for commercialization.
+
+
+## Session 18 — Legacy Code Archive (2026-11-03)
+
+### What changed
+
+- Created `legacy/` to preserve code that is no longer part of the supported
+  training and inference workflow.
+- Moved the previous heuristic package components:
+  - `inspector/config.py`
+  - `inspector/core/`
+  - The duplicate historical test under `inspector/tests/`
+- Moved retired data and training scripts to `legacy/scripts/`:
+  - `train_colab.py`
+  - `dataset_builder.py`
+  - `expand_dataset.py`
+  - `expand_dataset_60k.py`
+  - `build_alpaca_dataset.py`
+  - `build_openassistant_dataset.py`
+- Added `legacy/README.md` to explain the archive and distinguish it from
+  supported project commands.
+- Updated the root README project tree.
+
+### Supported workflow
+
+The current supported workflow remains:
+
+- `python scripts/prepare_dataset.py`
+- `python scripts/train.py`
+- `python -m inspector`
+- `python inspector_gui.py`
+
+Archived modules are retained for historical reference and are not maintained
+or tested as part of the current application.
