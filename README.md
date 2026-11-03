@@ -141,7 +141,7 @@ The training pipeline includes:
 - Best-checkpoint selection.
 - Held-out test evaluation.
 
-The tokenizer and model artifacts are staged and replace the previous artifacts only after the training run and test evaluation complete successfully.
+The tokenizer and model artifacts are staged and replace the previous artifacts only after the training run and test evaluation complete successfully. The checkpoint records canonical JSON SHA-256 fingerprints for both the exact tokenizer artifact and the prepared dataset used in that run. Training aborts before publishing artifacts if either source changes while the run is in progress.
 
 ## Project Structure
 
@@ -335,7 +335,21 @@ The training process produces:
 | `tokenizer_vocab.json` | BPE tokenizer vocabulary and configuration |
 | `training_metrics.json` | Training and evaluation metrics |
 
-The checkpoint stores the model state and configuration required for inference.
+The checkpoint stores the model state, model configuration, and artifact integrity metadata.
+
+### Artifact integrity
+
+New format-v4 checkpoints record:
+
+- `artifact_hashes.tokenizer`: SHA-256 fingerprint of `tokenizer_vocab.json`.
+- `artifact_hashes.prepared_dataset`: SHA-256 fingerprint of `prepared_dataset.json`.
+- `artifact_hashes.algorithm`: `sha256-canonical-json-v1`.
+
+The fingerprints are calculated from canonicalized JSON (sorted object keys, compact separators, UTF-8 encoding). This makes the verification independent of indentation and Windows/Linux line endings while still detecting changes to the tokenizer vocabulary, merge rules, dataset records, or split assignments.
+
+Before loading a format-v4 model, the inference engine verifies both files against the hashes stored in the checkpoint. A mismatch, or a missing prepared dataset, prevents the model from loading. Keep `inspector/data/processed/prepared_dataset.json`, `inspector/models/tokenizer_vocab.json`, and `inspector/models/inspector_model.pth` from the same training run.
+
+Older checkpoints without hash metadata remain loadable for backward compatibility, but the engine prints a warning because their tokenizer/dataset pairing cannot be verified. Run `python scripts/train.py` to produce a format-v4 checkpoint with integrity validation.
 
 The inference code supports checkpoints with explicit model configuration and provides compatibility handling for older checkpoints.
 
