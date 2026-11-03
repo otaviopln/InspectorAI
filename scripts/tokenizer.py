@@ -22,6 +22,7 @@ UNK = 3
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -42,11 +43,6 @@ ROOT = Path(__file__).resolve().parents[1]
 DATASET_PATH = (
     ROOT / "inspector" / "data" / "processed"
     / "mock_dataset.json"
-)
-
-VOCAB_PATH = (
-    ROOT / "inspector" / "models"
-    / "tokenizer_vocab.json"
 )
 
 # ---------------------------------------------------------------
@@ -415,7 +411,21 @@ def main() -> None:
     print("Decoded:", decoded)
     print("Round trip:", sample == decoded)
 
-    tokenizer.save(VOCAB_PATH)
+    # The standalone demonstration must never write to the production
+    # tokenizer used by training and inference. Save/reload only in a
+    # temporary directory that is automatically removed when the test ends.
+    with tempfile.TemporaryDirectory(
+        prefix="inspectorai-tokenizer-test-"
+    ) as temp_dir:
+        test_tokenizer_path = Path(temp_dir) / "tokenizer_test.json"
+        tokenizer.save(test_tokenizer_path)
+
+        reloaded_tokenizer = BPETokenizer.load(test_tokenizer_path)
+        persisted_decoded = reloaded_tokenizer.decode(
+            reloaded_tokenizer.encode(sample, add_special=True),
+            skip_special=True,
+        )
+        print("Save/load round trip:", sample == persisted_decoded)
 
 
 if __name__ == "__main__":
