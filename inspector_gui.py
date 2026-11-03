@@ -11,44 +11,15 @@ Run from the project root: python inspector_gui.py
 
 from __future__ import annotations
 
-import importlib.util
+from __future__ import annotations
+
 import queue
-import sys
 import threading
-from pathlib import Path
 from typing import Optional
 
 import customtkinter as ctk
 
-# ---------------------------------------------------------------------------
-# Project imports
-# ---------------------------------------------------------------------------
-ROOT = Path(__file__).resolve().parent
-SCRIPTS_DIR = ROOT / "scripts"
-
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-# Import inspector.py explicitly. The project also has an inspector/ package,
-# so a normal `import inspector` can resolve to the package instead of the file.
-_INSPECTOR_SCRIPT = ROOT / "inspector.py"
-if not _INSPECTOR_SCRIPT.is_file():
-    raise FileNotFoundError(f"Motor InspectorAI não encontrado: {_INSPECTOR_SCRIPT}")
-
-_inspector_spec = importlib.util.spec_from_file_location(
-    "inspector_engine", _INSPECTOR_SCRIPT
-)
-if _inspector_spec is None or _inspector_spec.loader is None:
-    raise ImportError("Não foi possível carregar inspector.py.")
-
-_inspector_module = importlib.util.module_from_spec(_inspector_spec)
-sys.modules[_inspector_spec.name] = _inspector_module
-_inspector_spec.loader.exec_module(_inspector_module)
-
-generate_response = _inspector_module.generate_response
-load_components = _inspector_module.load_components
+from inspector.engine import generate_response, load_components
 
 
 # ---------------------------------------------------------------------------
