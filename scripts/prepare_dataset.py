@@ -308,7 +308,7 @@ def grouped_stratified_split(
                 def coverage_score(group_id: str) -> tuple[int, int]:
                     newly_covered = sum(
                         1
-                        for other_stratum in group_strata_map[group_id]
+                        for other_stratum in sorted(group_strata_map[group_id])
                         if not split_already_has(split, other_stratum)
                     )
                     # Prefer a group that covers several currently missing
@@ -345,7 +345,7 @@ def grouped_stratified_split(
         def rarity(group_id: str) -> tuple[float, int]:
             weight = sum(
                 1.0 / len(groups_by_stratum[stratum])
-                for stratum in group_strata_map[group_id]
+                for stratum in sorted(group_strata_map[group_id])
             )
             return (-weight, -len(grouped[group_id]))
 

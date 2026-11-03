@@ -103,7 +103,7 @@ def test_source_fingerprint_ignores_json_whitespace_and_line_endings(tmp_path):
         ("\n".join(json.dumps(row, separators=(",", ":")) for row in rows) + "\n").encode("utf-8")
     )
     formatted.write_bytes(
-        ("\r\n".join(json.dumps(row, ensure_ascii=False, indent=2) for row in rows) + "\r\n").encode("utf-8")
+        ("\r\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\r\n").encode("utf-8")
     )
 
     compact_prepared, _ = prepare_module.prepare_dataset(

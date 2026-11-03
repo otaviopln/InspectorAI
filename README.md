@@ -359,33 +359,33 @@ The project includes an independent evaluator for the held-out dataset split. It
 
 Run the full test split from the project root:
 
-\`\`\`powershell
+```powershell
 python scripts/evaluate.py
-\`\`\`
+```
 
 Run a small smoke test before a full evaluation:
 
-\`\`\`powershell
+```powershell
 python scripts/evaluate.py --limit 5
-\`\`\`
+```
 
 Choose another split explicitly when needed:
 
-\`\`\`powershell
+```powershell
 python scripts/evaluate.py --split validation
-\`\`\`
+```
 
 The evaluator verifies:
 
-- Decision accuracy and decision coverage for \`CLARIFY\` and \`FORMAT_RCFO\`.
+- Decision accuracy and decision coverage for `CLARIFY` and `FORMAT_RCFO`.
 - Precision, recall, F1, and a confusion matrix for both decisions.
-- Presence of the required \`Questions\` section for clarification outputs.
-- Presence of \`Known requirements\` and \`Missing information\` for partial requests.
+- Presence of the required `Questions` section for clarification outputs.
+- Presence of `Known requirements` and `Missing information` for partial requests.
 - Completeness of the four R.C.F.O. fields: Role, Context, Focus, and Output.
 
-It writes \`evaluation_report.json\` and \`evaluation_predictions.jsonl\` to \`inspector/data/processed/\` by default. The report contains automated structural metrics; it does **not** establish semantic correctness, faithful preservation of every user requirement, or absence of unsupported assumptions. Those qualities still require independent human review.
+It writes `evaluation_report.json` and `evaluation_predictions.jsonl` to `inspector/data/processed/` by default. The report contains automated structural metrics; it does **not** establish semantic correctness, faithful preservation of every user requirement, or absence of unsupported assumptions. Those qualities still require independent human review.
 
-The evaluator uses the checkpoint's artifact-integrity validation. Keep \`inspector_model.pth\`, \`tokenizer_vocab.json\`, and \`prepared_dataset.json\` from the same training run.
+The evaluator uses the checkpoint's artifact-integrity validation. Keep `inspector_model.pth`, `tokenizer_vocab.json`, and `prepared_dataset.json` from the same training run.
 
 ## Limitations
 
