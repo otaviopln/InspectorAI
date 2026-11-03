@@ -1,9 +1,13 @@
-"""Inspector AI package.
+"""InspectorAI public package interface."""
 
-A custom AI that analyzes user prompts, asks strategic questions when input
-is dubious, and formats clear inputs into the R.C.F.O (Role, Context, Focus,
-Output) framework.
-"""
-
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __author__ = "Inspector AI Project"
+
+from .engine import generate_response, load_components
+
+__all__ = [
+    "__version__",
+    "__author__",
+    "generate_response",
+    "load_components",
+]
