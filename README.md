@@ -156,16 +156,14 @@ InspectorAI/
 ├── inspector_gui.py
 │
 ├── inspector/
-│   ├── __init__.py       # Public package API
-│   ├── __main__.py      # python -m inspector
-│   ├── cli.py           # Terminal interface
-│   ├── engine.py        # Single inference engine
-│   ├── config.py
-│   ├── core/            # Legacy heuristic components
+│   ├── __init__.py
+│   ├── __main__.py
+│   ├── cli.py
+│   ├── engine.py
 │   ├── data/
 │   │   ├── raw/
 │   │   └── processed/
-│   └── models/          # Tokenizer and generated model artifacts
+│   └── models/
 │
 ├── scripts/
 │   ├── model.py
@@ -173,13 +171,34 @@ InspectorAI/
 │   ├── train.py
 │   ├── prepare_dataset.py
 │   ├── inspect_sequence_lengths.py
-│   ├── run.py           # Backward-compatible CLI launcher
+│   ├── run.py
 │   └── colab_train_v2.ipynb
 │
-└── tests/
+├── tests/
+│
+└── legacy/
+    ├── README.md
+    ├── inspector/
+    │   ├── config.py
+    │   ├── core/
+    │   └── tests/
+    └── scripts/
+        ├── train_colab.py
+        ├── dataset_builder.py
+        ├── expand_dataset.py
+        ├── expand_dataset_60k.py
+        ├── build_alpaca_dataset.py
+        └── build_openassistant_dataset.py
 ```
 
-The inference engine lives exclusively in `inspector/engine.py`. The desktop GUI and terminal interface import `load_components()` and `generate_response()` from this module. The root-level `inspector.py` was removed to eliminate the collision between a Python module and the `inspector/` package.
+The supported training and inference workflow is maintained outside
+`legacy/`. The archive preserves the former heuristic implementation,
+previous synthetic dataset generators, external-dataset conversion
+experiments, and an older Colab trainer. Archived files are for historical
+reference only and are not part of the supported execution path.
+
+The inference engine lives exclusively in `inspector/engine.py`. The desktop
+GUI and terminal interface use that same module.
 
 Run the terminal interface with:
 
@@ -187,7 +206,7 @@ Run the terminal interface with:
 python -m inspector
 ```
 
-The older `python scripts/run.py` command remains available as a compatibility launcher.
+The compatibility launcher `python scripts/run.py` is also available.
 
 ## Installation
 
