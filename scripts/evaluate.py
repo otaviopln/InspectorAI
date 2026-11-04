@@ -27,6 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from inspector.engine import DATASET_PATH, generate_result, load_components
+from inspector.rcfo import validate_rcfo_structure
 
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "inspector" / "data" / "processed"
 DEFAULT_SEMANTIC_CASES = PROJECT_ROOT / "tests" / "fixtures" / "semantic_evaluation_cases.jsonl"
@@ -133,48 +134,9 @@ def _question_diagnostics(body: str) -> dict[str, Any]:
     }
 
 
-def _field_integrity(parsed: dict[str, Any]) -> dict[str, Any]:
-    """Validate the four R.C.F.O. fields: uniqueness, content and ordering."""
-    sections = parsed["sections"]
-    order = parsed["order"]
-    expected = ["Role", "Context", "Focus", "Output"]
-    counts = parsed["counts"]
-
-    missing = [label for label in expected if counts.get(label, 0) == 0]
-    duplicates = [label for label in expected if counts.get(label, 0) > 1]
-    empty = [
-        label for label in expected
-        if counts.get(label, 0) == 1 and not sections[label][0].strip()
-    ]
-    actual_field_order = [label for label in order if label in expected]
-    order_valid = actual_field_order == expected
-
-    unexpected = [
-        label for label in ("Known requirements", "Missing information", "Questions")
-        if counts.get(label, 0) > 0
-    ]
-    decision_valid = counts.get("Decision", 0) == 1 and bool(order) and order[0] == "Decision"
-    valid = (
-        not missing
-        and not duplicates
-        and not empty
-        and order_valid
-        and not unexpected
-        and decision_valid
-    )
-    return {
-        "applicable": True,
-        "valid": valid,
-        "expected_fields": expected,
-        "field_counts": {label: counts.get(label, 0) for label in expected},
-        "missing_fields": missing,
-        "duplicate_fields": duplicates,
-        "empty_fields": empty,
-        "field_order": actual_field_order,
-        "order_valid": order_valid,
-        "unexpected_sections": unexpected,
-        "decision_header_valid": decision_valid,
-    }
+def _field_integrity(parsed: dict[str, Any], output: str) -> dict[str, Any]:
+    """Delegate R.C.F.O. checks to the same validator used at inference time."""
+    return validate_rcfo_structure(output)
 
 
 def _semantic_screen(record: dict[str, Any], parsed: dict[str, Any], output: str) -> dict[str, Any]:
@@ -316,7 +278,7 @@ def score_output(record: dict[str, Any], output: str) -> dict[str, Any]:
         "valid": None,
     }
     field_integrity = (
-        _field_integrity(parsed) if task == "format_rcfo"
+        _field_integrity(parsed, output) if task == "format_rcfo"
         else {"applicable": False, "valid": None}
     )
     decision_occurrences = counts.get("Decision", 0)
