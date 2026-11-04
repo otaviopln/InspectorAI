@@ -25,6 +25,9 @@ class FakeRoot:
     def clipboard_get(self):
         return self.value
 
+    def winfo_id(self):
+        return 12345
+
 
 def test_copy_preserves_multiline_unicode_response():
     root = FakeRoot()
@@ -63,11 +66,11 @@ def test_copy_uses_native_windows_unicode_clipboard(monkeypatch):
     monkeypatch.setattr(
         clipboard,
         "_windows_clipboard_write",
-        lambda value: captured.append(value),
+        lambda hwnd, value: captured.append((hwnd, value)),
     )
 
     response = "Line 1\nLine 2 — resposta completa"
     clipboard.copy_text_to_clipboard(root, response)
 
-    assert captured == [response]
+    assert captured == [(12345, response)]
     assert root.value == ""
