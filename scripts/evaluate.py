@@ -627,7 +627,11 @@ def main() -> None:
         generation = None
         try:
             generation = generate_result(model, tokenizer, record["input"])
-            response = generation.text if generation.status == "ok" else ""
+            response = (
+                generation.text
+                if generation.status in {"ok", "invalid_structure"}
+                else ""
+            )
             if generation.status != "ok":
                 error = generation.status
         except Exception as exc:
