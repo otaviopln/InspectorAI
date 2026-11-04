@@ -661,7 +661,12 @@ def main() -> None:
 
     metrics = summarize_scores(scored)
     metrics["generation_failures"] = sum(
-        prediction["error"] is not None for prediction in predictions
+        prediction["generation_status"] not in {"ok", "invalid_structure"}
+        for prediction in predictions
+    )
+    metrics["structural_rejections"] = sum(
+        prediction["generation_status"] == "invalid_structure"
+        for prediction in predictions
     )
     statuses = sorted({
         prediction["generation_status"] for prediction in predictions
