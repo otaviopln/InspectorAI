@@ -1,6 +1,6 @@
 {
-  "best_validation_loss": 3.3782731123483214,
-  "test_loss": 3.3785319393511126,
+  "best_validation_loss": 3.494605120099308,
+  "test_loss": 3.3757192697098004,
   "train_examples": 416,
   "validation_examples": 52,
   "test_examples": 52,
