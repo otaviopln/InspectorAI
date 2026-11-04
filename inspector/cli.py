@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .engine import generate_response, load_components
+from .engine import generate_result, load_components
 
 
 def main() -> None:
@@ -42,12 +42,17 @@ def main() -> None:
             continue
 
         try:
-            response = generate_response(model, tokenizer, user_input)
+            result = generate_result(model, tokenizer, user_input)
         except Exception as exc:
             print(f"\nInspector error: {exc}\n")
             continue
 
-        print(f"\nInspector: {response}\n")
+        label = "Inspector"
+        if result.status == "incomplete_generation":
+            label += " (incomplete response)"
+        elif result.status != "ok":
+            label += f" ({result.status})"
+        print(f"\n{label}: {result.text}\n")
 
 
 if __name__ == "__main__":
