@@ -455,7 +455,11 @@ def grouped_stratified_split(
     result: dict[str, list[dict[str, Any]]] = {
         "train": [], "validation": [], "test": []
     }
-    for group_id, split in best_assignment.items():
+    # A manifest loads assignments in sorted order while a fresh split may
+    # build them in algorithm order. Sort both paths before the seeded shuffle
+    # so serialized split files remain byte-for-byte reproducible.
+    for group_id in sorted(best_assignment):
+        split = best_assignment[group_id]
         result[split].extend(grouped[group_id])
 
     rng = random.Random(seed)
