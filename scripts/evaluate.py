@@ -501,6 +501,7 @@ def summarize_scores(scores: list[dict[str, Any]]) -> dict[str, Any]:
         "decision_accuracy": _rate(correct, total),
         "decision_coverage": _rate(recognized, total),
         "strict_structure_validity": _rate(structurally_valid, total),
+        "expected_structure_validity": _rate(structurally_valid, total),
         "partial_sections_completeness": _rate(
             partial_complete, len(partial_items)
         ),
