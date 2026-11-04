@@ -54,7 +54,7 @@ def _windows_clipboard_write(text: str) -> None:
         if not user32.EmptyClipboard():
             raise ctypes.WinError(ctypes.get_last_error())
 
-        payload = text.encode("utf-16-le") + b"\\x00\\x00"
+        payload = text.encode("utf-16-le") + b"\x00\x00"
         memory = kernel32.GlobalAlloc(0x0002, len(payload))  # GMEM_MOVEABLE
         if not memory:
             raise ctypes.WinError(ctypes.get_last_error())
