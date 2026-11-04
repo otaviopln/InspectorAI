@@ -1,1 +1,1 @@
-"""InspectorAI — interface em vidro (Frutiger Aero escuro) feita com tkinter + Pillow."""
+"""InspectorAI — interface minimalista, escura e fluida feita com tkinter + Pillow."""
