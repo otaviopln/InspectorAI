@@ -46,6 +46,9 @@ env/
 *.swo
 .DS_Store
 
+# Atomic/staging files left by interrupted dataset or checkpoint operations
+*.tmp
+
 # Logs
 logs/
 *.log
