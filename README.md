@@ -66,7 +66,7 @@ The tokenizer is trained on the training split and is saved alongside the model 
 
 The inference implementation includes autoregressive generation with Beam Search.
 
-The current implementation uses configurable generation parameters, including beam size, length penalty, and maximum generated tokens.
+The current implementation uses configurable generation parameters, including beam size, length penalty, and maximum generated tokens. Before a generated R.C.F.O. response is accepted, the runtime validator checks the `Decision` header, exactly one non-empty `Role`, `Context`, `Focus`, and `Output` field, their required order, duplicate headings, incompatible clarification sections, and unassigned preamble text. Invalid structures are rejected with diagnostics; the validator does not repair fields or claim semantic fidelity.
 
 ## Training Pipeline
 
@@ -373,6 +373,8 @@ Use a different annotated benchmark file:
 
     python scripts/evaluate.py --semantic-cases tests/fixtures/semantic_evaluation_cases.jsonl
 
+The evaluator reuses the same R.C.F.O. structural validator as runtime inference, avoiding drift between what the application accepts and what the tests score. Structural rejections are reported separately from technical generation failures.
+
 The evaluator measures:
 
 - Decision accuracy, coverage, class precision/recall/F1, and confusion matrix.
@@ -397,6 +399,7 @@ The human-review queue includes fields for intent preservation, requirement pres
 Run the evaluator regression tests:
 
     pytest tests/test_evaluate.py -v
+    pytest tests/test_rcfo_validator.py -v
 
 Run the full test suite:
 
