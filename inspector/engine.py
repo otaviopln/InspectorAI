@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Tuple
 
@@ -60,8 +61,9 @@ def _validate_checkpoint_artifact_hashes(
     checkpoint: dict,
     tokenizer_path: Path = TOKENIZER_PATH,
     dataset_path: Path = DATASET_PATH,
+    validate_dataset: bool = True,
 ) -> bool:
-    """Validate tokenizer and prepared-dataset fingerprints recorded at training."""
+    """Validate hashes; dataset validation is required for reproducible evaluation."""
     artifact_hashes = checkpoint.get("artifact_hashes")
     format_version = int(checkpoint.get("format_version", 0))
 
@@ -87,10 +89,9 @@ def _validate_checkpoint_artifact_hashes(
             f"{algorithm!r}. Esperado {HASH_ALGORITHM!r}."
         )
 
-    artifacts = (
-        ("tokenizer", tokenizer_path),
-        ("prepared_dataset", dataset_path),
-    )
+    artifacts = [("tokenizer", tokenizer_path)]
+    if validate_dataset:
+        artifacts.append(("prepared_dataset", dataset_path))
 
     for artifact_name, artifact_path in artifacts:
         expected_hash = artifact_hashes.get(artifact_name)
@@ -108,10 +109,10 @@ def _validate_checkpoint_artifact_hashes(
                 "Restaure os arquivos correspondentes ou treine novamente."
             )
 
-    print(
-        "Integridade dos artefatos validada "
-        "(SHA-256 canônico): tokenizer OK | dataset OK."
-    )
+    validated = "tokenizer OK"
+    if validate_dataset:
+        validated += " | dataset OK"
+    print(f"Integridade dos artefatos validada (SHA-256 canônico): {validated}.")
     return True
 
 
@@ -259,9 +260,12 @@ def _infer_model_dims(
 
 
 
-def load_components() -> tuple:
+def load_components(validate_dataset: bool = False) -> tuple:
     """
     Carrega tokenizer e modelo treinado.
+
+    A inferência valida o tokenizador, mas não depende do dataset de treino.
+    A avaliação reproduzível deve usar load_components(validate_dataset=True).
 
     Suporta:
         1. Checkpoints novos com configuração explícita.
@@ -286,9 +290,12 @@ def load_components() -> tuple:
     # ---------------------------------------------------------------
     # 1. Carrega checkpoint e valida os artefatos associados
     # ---------------------------------------------------------------
+    # Load only checkpoints produced by this project or another trusted source.
+    # requirements.txt sets the minimum version with known serialization fixes.
     checkpoint = torch.load(
         MODEL_PATH,
         map_location="cpu",
+        weights_only=True,
     )
 
     is_new_checkpoint = (
@@ -297,7 +304,10 @@ def load_components() -> tuple:
     )
 
     if is_new_checkpoint:
-        _validate_checkpoint_artifact_hashes(checkpoint)
+        _validate_checkpoint_artifact_hashes(
+            checkpoint,
+            validate_dataset=validate_dataset,
+        )
 
     # Load the tokenizer only after its fingerprint has been verified.
     tokenizer = BPETokenizer.load(TOKENIZER_PATH)
@@ -466,10 +476,9 @@ def _topk_logits(
 def _beam_search(
     model: InspectorTransformer,
     tokenizer: BPETokenizer,
-    src: torch.Tensor,
     src_mask: torch.Tensor,
     enc_out: torch.Tensor,
-) -> List[int]:
+) -> tuple[List[int], bool]:
     """
     Decodificação autoregressiva com Beam Search.
 
@@ -604,12 +613,113 @@ def _beam_search(
             break
 
     if not beams:
-        return []
+        return [], False
 
-    # Retorna o melhor resultado, removendo SOS.
-    best_tokens, _, _ = beams[0]
+    # EOS marks a complete response; reaching max_steps does not.
+    best_tokens, _, was_finished = beams[0]
+    return best_tokens[1:], was_finished
 
-    return best_tokens[1:]
+
+@dataclass(frozen=True)
+class InspectorResult:
+    """Structured inference result; distinguishes errors from generated text."""
+
+    status: str
+    text: str
+    input_tokens: int
+    max_input_tokens: int
+    finished: bool
+    stop_reason: str
+
+
+def generate_result(
+    model: InspectorTransformer,
+    tokenizer: BPETokenizer,
+    user_input: str,
+) -> InspectorResult:
+    """Generate a response without silently truncating the user's input."""
+    model.eval()
+    user_input = user_input.strip()
+
+    if not user_input:
+        return InspectorResult(
+            status="empty_input",
+            text="Please provide a prompt.",
+            input_tokens=0,
+            max_input_tokens=0,
+            finished=False,
+            stop_reason="empty_input",
+        )
+
+    model_max_len = int(model.encoder.pos_enc.pe.shape[1])
+    src_ids = tokenizer.encode(user_input)
+    input_tokens = len(src_ids)
+
+    if input_tokens > model_max_len:
+        return InspectorResult(
+            status="input_too_long",
+            text=(
+                f"Input too long: {input_tokens} tokens; "
+                f"the model limit is {model_max_len}. "
+                "Shorten the prompt; no content was discarded."
+            ),
+            input_tokens=input_tokens,
+            max_input_tokens=model_max_len,
+            finished=False,
+            stop_reason="input_too_long",
+        )
+
+    if not src_ids:
+        return InspectorResult(
+            status="empty_input",
+            text="Please provide a non-empty prompt.",
+            input_tokens=0,
+            max_input_tokens=model_max_len,
+            finished=False,
+            stop_reason="empty_input",
+        )
+
+    src = torch.tensor([src_ids], dtype=torch.long)
+    src_mask = InspectorTransformer.create_padding_mask(src, PAD_IDX)
+
+    with torch.no_grad():
+        enc_out = model.encode(src, src_mask)
+        generated_ids, was_finished = _beam_search(
+            model,
+            tokenizer,
+            src_mask,
+            enc_out,
+        )
+
+    response = tokenizer.decode(generated_ids, skip_special=True).strip()
+    if not response:
+        return InspectorResult(
+            status="no_output",
+            text="InspectorAI could not generate a response.",
+            input_tokens=input_tokens,
+            max_input_tokens=model_max_len,
+            finished=was_finished,
+            stop_reason="no_output",
+        )
+
+    if not was_finished:
+        return InspectorResult(
+            status="incomplete_generation",
+            text=response,
+            input_tokens=input_tokens,
+            max_input_tokens=model_max_len,
+            finished=False,
+            stop_reason="max_tokens_reached",
+        )
+
+    return InspectorResult(
+        status="ok",
+        text=response,
+        input_tokens=input_tokens,
+        max_input_tokens=model_max_len,
+        finished=True,
+        stop_reason="eos_reached",
+    )
 
 
 def generate_response(
@@ -617,64 +727,8 @@ def generate_response(
     tokenizer: BPETokenizer,
     user_input: str,
 ) -> str:
-    """
-    Gera uma resposta para uma entrada do usuário.
-
-    Executa o encoder uma vez e utiliza Beam Search
-    para a decodificação autoregressiva.
-    """
-
-    model.eval()
-
-    user_input = user_input.strip()
-
-    if not user_input:
-        return "I did not understand that. Please provide a prompt."
-
-    # Recupera o limite posicional real do modelo.
-    model_max_len = int(model.encoder.pos_enc.pe.shape[1])
-
-    # Codifica e limita a entrada.
-    src_ids = tokenizer.encode(user_input)
-
-    src_ids = src_ids[:model_max_len]
-
-    if not src_ids:
-        return "I did not understand that. Please try again."
-
-    src = torch.tensor(
-        [src_ids],
-        dtype=torch.long,
-    )
-
-    src_mask = InspectorTransformer.create_padding_mask(
-        src,
-        PAD_IDX,
-    )
-
-    with torch.no_grad():
-
-        # Executa o encoder uma única vez.
-        enc_out = model.encode(
-            src,
-            src_mask,
-        )
-
-        # Decodifica por Beam Search.
-        generated_ids = _beam_search(
-            model,
-            tokenizer,
-            src,
-            src_mask,
-            enc_out,
-        )
-
-    response = tokenizer.decode(
-        generated_ids,
-        skip_special=True,
-    )
-
-    if not response.strip():
-        return "I could not generate a response. Please try again."
-
-    return response.strip()
+    """Backward-compatible string API; raises for non-successful inference."""
+    result = generate_result(model, tokenizer, user_input)
+    if result.status != "ok":
+        raise ValueError(result.text)
+    return result.text
