@@ -16,6 +16,7 @@ from inspector.engine import generate_response, load_components
 from . import render
 from . import theme as T
 from .anim import Animator, linear
+from .clipboard import ClipboardWriteError, copy_text_to_clipboard
 from .widgets import GlassButton, GlassPanel, Hover, perimeter_point, photo
 
 NARROW = 1040  # largura lógica abaixo da qual a barra lateral recolhe
@@ -627,11 +628,21 @@ class InspectorApp:
 
     def _copy(self, item, text: str) -> None:
         try:
-            self.root.clipboard_clear()
-            self.root.clipboard_append(text)
-        except Exception:
+            copy_text_to_clipboard(self.root, text)
+        except ClipboardWriteError as exc:
+            try:
+                self.scene.itemconfigure(item, text="Falha ao copiar", fill=T.RED)
+            except tk.TclError:
+                pass
+            self._flash_hint(f"Não foi possível copiar a resposta: {exc}", color=T.RED)
+            self.root.after(2200, lambda: self._restore_copy(item))
             return
-        self.scene.itemconfigure(item, text="Copiado ✓", fill=T.LIME)
+
+        try:
+            self.scene.itemconfigure(item, text="Copiado ✓", fill=T.LIME)
+        except tk.TclError:
+            pass
+        self._flash_hint("Resposta copiada para a área de transferência.", color=T.LIME, ms=1800)
         self.root.after(1500, lambda: self._restore_copy(item))
 
     def _restore_copy(self, item) -> None:
