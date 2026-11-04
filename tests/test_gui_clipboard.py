@@ -54,13 +54,10 @@ def test_copy_reports_tk_clipboard_failure_on_non_windows(monkeypatch):
         clipboard.copy_text_to_clipboard(BrokenRoot(), "InspectorAI response")
 
 
-def test_copy_uses_windows_fallback_when_tk_verification_fails(monkeypatch):
+def test_copy_uses_native_windows_unicode_clipboard(monkeypatch):
     import inspector_ui.clipboard as clipboard
 
-    class BrokenRoot(FakeRoot):
-        def clipboard_get(self):
-            raise RuntimeError("Tk clipboard verification failed")
-
+    root = FakeRoot()
     captured = []
     monkeypatch.setattr(clipboard.sys, "platform", "win32")
     monkeypatch.setattr(
@@ -70,6 +67,7 @@ def test_copy_uses_windows_fallback_when_tk_verification_fails(monkeypatch):
     )
 
     response = "Line 1\nLine 2 — resposta completa"
-    clipboard.copy_text_to_clipboard(BrokenRoot(), response)
+    clipboard.copy_text_to_clipboard(root, response)
 
     assert captured == [response]
+    assert root.value == ""
