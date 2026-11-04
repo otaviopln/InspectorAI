@@ -109,3 +109,14 @@ def test_padding_is_dynamic_and_never_truncates(monkeypatch):
     assert padded.shape == (2, 3)
     with pytest.raises(ValueError, match="não deve truncar"):
         train.pad_sequences([[1, 2, 3, 4]], max_len=3)
+
+
+
+def test_sequence_length_precheck_fails_before_training(monkeypatch):
+    monkeypatch.setattr(train, "MAX_LEN", 8)
+    with pytest.raises(ValueError, match="excedem MAX_LEN"):
+        train.validate_sequence_lengths(
+            [("entrada", "long_input")],
+            FakeTokenizer(),
+            "train",
+        )
