@@ -85,6 +85,16 @@ def copy_text_to_clipboard(root, text: str) -> None:
     if not isinstance(text, str) or not text:
         raise ValueError("There is no response text to copy.")
 
+    # On Windows, write directly to the native Unicode clipboard first. This
+    # avoids relying on Tk's delayed clipboard ownership/selection handling.
+    windows_error: Exception | None = None
+    if sys.platform == "win32":
+        try:
+            _windows_clipboard_write(text)
+            return
+        except Exception as exc:
+            windows_error = exc
+
     tk_error: Exception | None = None
     try:
         root.clipboard_clear()
@@ -98,15 +108,11 @@ def copy_text_to_clipboard(root, text: str) -> None:
     except Exception as exc:
         tk_error = exc
 
-    if sys.platform == "win32":
-        try:
-            _windows_clipboard_write(text)
-            return
-        except Exception as win_error:
-            raise ClipboardWriteError(
-                "Tkinter and the Windows clipboard API both failed. "
-                f"Tkinter: {tk_error}; Windows: {win_error}"
-            ) from win_error
+    if windows_error is not None:
+        raise ClipboardWriteError(
+            "The Windows clipboard API and Tkinter both failed. "
+            f"Windows: {windows_error}; Tkinter: {tk_error}"
+        ) from tk_error
 
     raise ClipboardWriteError(
         f"Tkinter could not write or verify the clipboard contents: {tk_error}"
