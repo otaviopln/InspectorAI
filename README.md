@@ -355,38 +355,54 @@ The inference code supports checkpoints with explicit model configuration and pr
 
 ## Behavioral Evaluation
 
-The project includes an independent evaluator for the held-out dataset split. It runs the trained model through the same inference engine used by the application and records both aggregate metrics and per-example outputs.
+The behavioral evaluator reports more than decision recognition. It checks output integrity and runs a small, manually annotated semantic screening suite.
 
-Run the full test split from the project root:
+Run the full held-out test split and the annotated semantic suite:
 
-```powershell
-python scripts/evaluate.py
-```
+    python scripts/evaluate.py
 
-Run a small smoke test before a full evaluation:
+Run a small smoke test on the held-out split (the semantic suite is still included):
 
-```powershell
-python scripts/evaluate.py --limit 5
-```
+    python scripts/evaluate.py --limit 5
 
-Choose another split explicitly when needed:
+Run only the held-out split:
 
-```powershell
-python scripts/evaluate.py --split validation
-```
+    python scripts/evaluate.py --skip-semantic-cases
 
-The evaluator verifies:
+Use a different annotated benchmark file:
 
-- Decision accuracy and decision coverage for `CLARIFY` and `FORMAT_RCFO`.
-- Precision, recall, F1, and a confusion matrix for both decisions.
-- Presence of the required `Questions` section for clarification outputs.
-- Presence of `Known requirements` and `Missing information` for partial requests.
-- Completeness of the four R.C.F.O. fields: Role, Context, Focus, and Output.
+    python scripts/evaluate.py --semantic-cases tests/fixtures/semantic_evaluation_cases.jsonl
 
-It writes `evaluation_report.json` and `evaluation_predictions.jsonl` to `inspector/data/processed/` by default. The report contains automated structural metrics; it does **not** establish semantic correctness, faithful preservation of every user requirement, or absence of unsupported assumptions. Those qualities still require independent human review.
+The evaluator measures:
 
-The evaluator uses the checkpoint's artifact-integrity validation. Keep `inspector_model.pth`, `tokenizer_vocab.json`, and `prepared_dataset.json` from the same training run.
+- Decision accuracy, coverage, class precision/recall/F1, and confusion matrix.
+- Exact section counts, required non-empty sections, section order, and incompatible sections for each task.
+- R.C.F.O. integrity: exactly one Role, Context, Focus, and Output, all non-empty and in the required order.
+- Clarification format: at least one numbered question and detection of exact duplicate questions.
+- Requirement-anchor coverage for manually annotated benchmark cases.
+- Explicit forbidden-phrase matches for unsupported content listed in those annotations.
 
+**Important limitation:** lexical anchors and forbidden phrases are deterministic screening checks, not semantic understanding. A paraphrase not included in the aliases can be marked as missing, and unsupported claims not explicitly listed cannot be detected by this mechanism. They do not prove that intent was preserved or that all invented content is absent.
+
+The evaluator writes three artifacts to inspector/data/processed/:
+
+| File | Purpose |
+|---|---|
+| evaluation_report.json | Aggregate metrics and limitations |
+| evaluation_predictions.jsonl | Per-example outputs and automatic diagnostics |
+| evaluation_review_queue.jsonl | Editable human-review template for every generated answer |
+
+The human-review queue includes fields for intent preservation, requirement preservation, unsupported content, semantic fidelity, R.C.F.O. faithfulness, and clarification-question relevance. Complete this review before making claims about semantic quality.
+
+Run the evaluator regression tests:
+
+    pytest tests/test_evaluate.py -v
+
+Run the full test suite:
+
+    pytest -q
+
+The evaluator uses the checkpoint's artifact-integrity validation. Keep inspector_model.pth, tokenizer_vocab.json, and prepared_dataset.json from the same training run.
 ## Limitations
 
 InspectorAI is an experimental project. Its capabilities depend heavily on the quality, size, and diversity of the training dataset.
