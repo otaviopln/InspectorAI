@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from .engine import generate_response, load_components
+from .engine import generate_result, load_components
+from .rcfo import format_rcfo_validation_error
 
 
 def main() -> None:
@@ -42,12 +43,22 @@ def main() -> None:
             continue
 
         try:
-            response = generate_response(model, tokenizer, user_input)
+            result = generate_result(model, tokenizer, user_input)
         except Exception as exc:
             print(f"\nInspector error: {exc}\n")
             continue
 
-        print(f"\nInspector: {response}\n")
+        label = "Inspector"
+        if result.status == "incomplete_generation":
+            label += " (incomplete response)"
+        elif result.status == "invalid_structure":
+            label += " (R.C.F.O. structure rejected)"
+            detail = format_rcfo_validation_error(result.validation or {})
+            print(f"\n{label}: {detail}\n{result.text}\n")
+            continue
+        elif result.status != "ok":
+            label += f" ({result.status})"
+        print(f"\n{label}: {result.text}\n")
 
 
 if __name__ == "__main__":

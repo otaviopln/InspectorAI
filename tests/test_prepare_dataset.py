@@ -199,3 +199,69 @@ def test_related_group_can_span_categories_but_stays_in_one_split(tmp_path):
         if any(row["group_id"] == "shared_school_scenario" for row in split_rows)
     }
     assert len(locations) == 1
+
+
+
+def test_incomplete_pending_draft_does_not_block_preparation(tmp_path):
+    rows = [
+        make_record(f"{kind}_{index}", "", kind, f"{kind}_family_{index}")
+        for kind in ("vague", "partial", "clear")
+        for index in range(6)
+    ]
+    rows.append({"id": "draft_001", "review_status": "pending_review"})
+    source = tmp_path / "curated.jsonl"
+    write_jsonl(source, rows)
+
+    approved, excluded = prepare_module.load_approved_records(source)
+    assert len(approved) == 18
+    assert excluded == 1
+
+
+def test_split_manifest_keeps_existing_groups_fixed_when_dataset_grows(tmp_path):
+    rows = [
+        make_record(f"{kind}_{index}", "", kind, f"{kind}_family_{index}")
+        for kind in ("vague", "partial", "clear")
+        for index in range(6)
+    ]
+    source = tmp_path / "curated.jsonl"
+    output = tmp_path / "processed" / "prepared_dataset.json"
+    manifest = tmp_path / "processed" / "split_manifest.json"
+    write_jsonl(source, rows)
+
+    first, _ = prepare_module.prepare_dataset(
+        source, output, seed=42, manifest_path=manifest
+    )
+    original = json.loads(manifest.read_text(encoding="utf-8"))["assignments"]
+
+    rows.extend(
+        make_record(f"{kind}_new", "", kind, f"{kind}_new_family")
+        for kind in ("vague", "partial", "clear")
+    )
+    write_jsonl(source, rows)
+    second, _ = prepare_module.prepare_dataset(
+        source, output, seed=42, manifest_path=manifest
+    )
+    updated = json.loads(manifest.read_text(encoding="utf-8"))["assignments"]
+
+    assert all(updated[group_id] == split for group_id, split in original.items())
+    assert second["split_manifest_sha256"] != first["split_manifest_sha256"]
+
+
+def test_pending_edits_change_full_hash_but_not_approved_fingerprint(tmp_path):
+    rows = [
+        make_record(f"{kind}_{index}", "", kind, f"{kind}_family_{index}")
+        for kind in ("vague", "partial", "clear")
+        for index in range(6)
+    ]
+    draft = {"id": "draft_001", "review_status": "pending_review"}
+    source = tmp_path / "curated.jsonl"
+    output = tmp_path / "processed" / "prepared_dataset.json"
+    write_jsonl(source, rows + [draft])
+
+    first, first_report = prepare_module.prepare_dataset(source, output, seed=42)
+    draft["notes"] = "This incomplete record is still under review."
+    write_jsonl(source, rows + [draft])
+    second, second_report = prepare_module.prepare_dataset(source, output, seed=42)
+
+    assert first["source_sha256"] == second["source_sha256"]
+    assert first_report["source_sha256"] != second_report["source_sha256"]

@@ -24,19 +24,19 @@
   },
   "by_ambiguity": {
     "train": {
+      "vague": 133,
       "partial": 143,
-      "clear": 140,
-      "vague": 133
+      "clear": 140
     },
     "validation": {
-      "vague": 17,
-      "clear": 17,
-      "partial": 18
-    },
-    "test": {
       "partial": 18,
       "clear": 17,
       "vague": 17
+    },
+    "test": {
+      "vague": 17,
+      "partial": 18,
+      "clear": 17
     }
   },
   "unique_groups": {
@@ -44,5 +44,13 @@
     "validation": 52,
     "test": 52
   },
-  "source_sha256": "d672fc354c36e90488e60cd675a6428f33de77bbb5ed190b587d7b22ff2e0000"
+  "source_sha256": "d672fc354c36e90488e60cd675a6428f33de77bbb5ed190b587d7b22ff2e0000",
+  "approved_source_sha256": "d672fc354c36e90488e60cd675a6428f33de77bbb5ed190b587d7b22ff2e0000",
+  "split_manifest_sha256": "bc5bd6f6e294662a4af9ce1a654ae049328512fd849b6bba20bbfaa1b5efb6fe",
+  "group_size_distribution": {
+    "1": 520
+  },
+  "warnings": [
+    "Todos os grupos têm um único registro; paráfrases entre grupos ainda exigem auditoria semântica."
+  ]
 }
