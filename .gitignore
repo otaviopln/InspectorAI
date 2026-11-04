@@ -25,19 +25,12 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# PyTorch / model artifacts
-*.pt
-*.pth
-*.bin
-models/**/*.pt
-models/**/*.pth
-inspector/models/*.pt
-inspector/models/*.pth
 
 # Virtual environments
 .venv/
 venv/
 env/
+!.env.example
 
 # IDE
 .vscode/
@@ -55,7 +48,3 @@ logs/
 
 # OS
 Thumbs.db
-
-# Generated behavioral evaluation outputs
-inspector/data/processed/evaluation_report.json
-inspector/data/processed/evaluation_predictions.jsonl

@@ -1,9 +1,7 @@
 {
-  "best_validation_loss": 3.494605120099308,
-  "test_loss": 3.3757192697098004,
+  "best_validation_loss": 3.34852042940569,
   "train_examples": 416,
   "validation_examples": 52,
-  "test_examples": 52,
   "device": "cuda",
   "model_config": {
     "vocab_size": 3000,
@@ -13,5 +11,110 @@
     "d_ff": 1024,
     "max_len": 192,
     "pad_idx": 0
-  }
+  },
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 5.765570994903445,
+      "validation_loss": 4.693981970524494,
+      "learning_rate": 0.0005
+    },
+    {
+      "epoch": 2,
+      "train_loss": 4.313612408169979,
+      "validation_loss": 4.136104563321794,
+      "learning_rate": 0.0005
+    },
+    {
+      "epoch": 3,
+      "train_loss": 3.867400032052801,
+      "validation_loss": 3.9028024866549336,
+      "learning_rate": 0.0005
+    },
+    {
+      "epoch": 4,
+      "train_loss": 3.602717494313874,
+      "validation_loss": 3.776172704521323,
+      "learning_rate": 0.0005
+    },
+    {
+      "epoch": 5,
+      "train_loss": 3.3826903798541657,
+      "validation_loss": 3.6901654906402723,
+      "learning_rate": 0.0005
+    },
+    {
+      "epoch": 6,
+      "train_loss": 3.185582000381809,
+      "validation_loss": 3.6009133995647398,
+      "learning_rate": 0.0005
+    },
+    {
+      "epoch": 7,
+      "train_loss": 3.0040917510283323,
+      "validation_loss": 3.5279358634566993,
+      "learning_rate": 0.0005
+    },
+    {
+      "epoch": 8,
+      "train_loss": 2.8259377793514355,
+      "validation_loss": 3.475534930461114,
+      "learning_rate": 0.0005
+    },
+    {
+      "epoch": 9,
+      "train_loss": 2.6577406431792006,
+      "validation_loss": 3.4241160569647064,
+      "learning_rate": 0.0005
+    },
+    {
+      "epoch": 10,
+      "train_loss": 2.4845869269337384,
+      "validation_loss": 3.399659836600208,
+      "learning_rate": 0.0005
+    },
+    {
+      "epoch": 11,
+      "train_loss": 2.320144846424484,
+      "validation_loss": 3.370613522492982,
+      "learning_rate": 0.0005
+    },
+    {
+      "epoch": 12,
+      "train_loss": 2.151239393473075,
+      "validation_loss": 3.34852042940569,
+      "learning_rate": 0.0005
+    },
+    {
+      "epoch": 13,
+      "train_loss": 1.9864642269556994,
+      "validation_loss": 3.353166629470779,
+      "learning_rate": 0.0005
+    },
+    {
+      "epoch": 14,
+      "train_loss": 1.818590993219933,
+      "validation_loss": 3.370786883927013,
+      "learning_rate": 0.0005
+    },
+    {
+      "epoch": 15,
+      "train_loss": 1.664128098465885,
+      "validation_loss": 3.378282234062282,
+      "learning_rate": 0.0005
+    },
+    {
+      "epoch": 16,
+      "train_loss": 1.5200056775829955,
+      "validation_loss": 3.4136498273459317,
+      "learning_rate": 0.0005
+    },
+    {
+      "epoch": 17,
+      "train_loss": 1.376470506952519,
+      "validation_loss": 3.4186224809823713,
+      "learning_rate": 0.0005
+    }
+  ],
+  "test_evaluation": "Run scripts/evaluate.py after model selection."
 }

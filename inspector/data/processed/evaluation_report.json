@@ -1,0 +1,57 @@
+{
+  "evaluator_version": "1.1",
+  "split": "test",
+  "dataset_schema": "inspector.dataset.v2",
+  "limited_run": false,
+  "metrics": {
+    "examples": 52,
+    "decision_accuracy": 0.9038,
+    "decision_coverage": 1.0,
+    "expected_structure_validity": 0.8654,
+    "partial_sections_completeness": 0.8333,
+    "partial_examples": 18,
+    "by_task": {
+      "clarify": {
+        "examples": 35,
+        "decision_accuracy": 0.9143,
+        "expected_structure_validity": 0.9143
+      },
+      "format_rcfo": {
+        "examples": 17,
+        "decision_accuracy": 0.8824,
+        "expected_structure_validity": 0.7647
+      }
+    },
+    "class_metrics": {
+      "CLARIFY": {
+        "precision": 0.9412,
+        "recall": 0.9143,
+        "f1": 0.9276,
+        "support": 35
+      },
+      "FORMAT_RCFO": {
+        "precision": 0.8333,
+        "recall": 0.8824,
+        "f1": 0.8571,
+        "support": 17
+      }
+    },
+    "confusion_matrix": {
+      "CLARIFY": {
+        "CLARIFY": 32,
+        "FORMAT_RCFO": 3,
+        "UNKNOWN": 0
+      },
+      "FORMAT_RCFO": {
+        "CLARIFY": 2,
+        "FORMAT_RCFO": 15,
+        "UNKNOWN": 0
+      }
+    },
+    "generation_failures": 0,
+    "generation_statuses": {
+      "ok": 52
+    }
+  },
+  "interpretation": "Automated structural metrics only. Semantic preservation, question relevance, and unsupported assumptions still require human review."
+}
