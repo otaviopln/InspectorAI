@@ -19,7 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from inspector.engine import DATASET_PATH, generate_response, load_components
+from inspector.engine import DATASET_PATH, generate_result, load_components
 
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "inspector" / "data" / "processed"
 DECISIONS = ("CLARIFY", "FORMAT_RCFO")
@@ -34,7 +34,7 @@ SECTION_LABELS = (
     "Focus",
     "Output",
 )
-EVALUATOR_VERSION = "1.0"
+EVALUATOR_VERSION = "1.1"
 
 
 def parse_decision(text: str) -> str:
@@ -207,7 +207,7 @@ def main() -> None:
         parser.error("--limit precisa ser maior que zero.")
 
     # Load the model only after validating its tokenizer/dataset fingerprints.
-    tokenizer, model = load_components()
+    tokenizer, model = load_components(validate_dataset=True)
 
     with DATASET_PATH.open("r", encoding="utf-8") as stream:
         dataset = json.load(stream)
@@ -223,21 +223,46 @@ def main() -> None:
     predictions = []
     for index, record in enumerate(records, start=1):
         error = None
+        generation = None
         try:
-            response = generate_response(model, tokenizer, record["input"])
+            generation = generate_result(model, tokenizer, record["input"])
+            response = generation.text if generation.status == "ok" else ""
+            if generation.status != "ok":
+                error = generation.status
         except Exception as exc:
             response = ""
             error = f"{type(exc).__name__}: {exc}"
 
         score = score_output(record, response)
         scored.append(score)
-        predictions.append({**score, "response": response, "error": error})
+        predictions.append({
+            **score,
+            "response": response,
+            "error": error,
+            "generation_status": generation.status if generation else "exception",
+            "generation_finished": generation.finished if generation else False,
+            "input_tokens": generation.input_tokens if generation else None,
+            "max_input_tokens": generation.max_input_tokens if generation else None,
+        })
         print(
             f"[{index}/{len(records)}] {record.get('id', 'sem_id')}: "
             f"{score['predicted_decision']}"
         )
 
     metrics = summarize_scores(scored)
+    metrics["generation_failures"] = sum(
+        prediction["error"] is not None for prediction in predictions
+    )
+    statuses = sorted({
+        prediction["generation_status"] for prediction in predictions
+    })
+    metrics["generation_statuses"] = {
+        status: sum(
+            prediction["generation_status"] == status
+            for prediction in predictions
+        )
+        for status in statuses
+    }
     report = {
         "evaluator_version": EVALUATOR_VERSION,
         "split": args.split,
