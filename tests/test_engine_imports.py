@@ -6,6 +6,7 @@ from inspector import engine
 
 def test_package_and_engine_export_the_same_api():
     assert inspector.generate_response is engine.generate_response
+    assert inspector.generate_result is engine.generate_result
     assert inspector.load_components is engine.load_components
 
 
