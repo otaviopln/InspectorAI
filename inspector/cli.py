@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .engine import generate_result, load_components
+from .rcfo import format_rcfo_validation_error
 
 
 def main() -> None:
@@ -50,6 +51,11 @@ def main() -> None:
         label = "Inspector"
         if result.status == "incomplete_generation":
             label += " (incomplete response)"
+        elif result.status == "invalid_structure":
+            label += " (R.C.F.O. structure rejected)"
+            detail = format_rcfo_validation_error(result.validation or {})
+            print(f"\n{label}: {detail}\n{result.text}\n")
+            continue
         elif result.status != "ok":
             label += f" ({result.status})"
         print(f"\n{label}: {result.text}\n")
