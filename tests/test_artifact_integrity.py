@@ -110,3 +110,33 @@ def test_checkpoint_v4_requires_artifact_hashes():
 def test_legacy_checkpoint_without_hashes_warns_and_remains_compatible(capsys):
     assert engine._validate_checkpoint_artifact_hashes({"format_version": 3}) is False
     assert "checkpoint legado sem hashes" in capsys.readouterr().out
+
+
+
+def test_inference_mode_does_not_require_training_dataset(tmp_path):
+    tokenizer_path = _write_json(tmp_path / "tokenizer.json", {"vocab": {"a": 4}})
+    dataset_path = _write_json(tmp_path / "prepared_dataset.json", {"splits": {"train": []}})
+    checkpoint = _checkpoint_for(tokenizer_path, dataset_path)
+    dataset_path.unlink()
+
+    assert engine._validate_checkpoint_artifact_hashes(
+        checkpoint,
+        tokenizer_path=tokenizer_path,
+        dataset_path=dataset_path,
+        validate_dataset=False,
+    ) is True
+
+
+def test_inference_mode_still_rejects_tokenizer_mismatch(tmp_path):
+    tokenizer_path = _write_json(tmp_path / "tokenizer.json", {"vocab": {"a": 4}})
+    dataset_path = _write_json(tmp_path / "prepared_dataset.json", {"splits": {}})
+    checkpoint = _checkpoint_for(tokenizer_path, dataset_path)
+    _write_json(tokenizer_path, {"vocab": {"b": 4}})
+
+    with pytest.raises(ValueError, match="tokenizer"):
+        engine._validate_checkpoint_artifact_hashes(
+            checkpoint,
+            tokenizer_path=tokenizer_path,
+            dataset_path=dataset_path,
+            validate_dataset=False,
+        )
