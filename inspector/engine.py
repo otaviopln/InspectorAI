@@ -16,6 +16,11 @@ import torch
 
 from scripts.model import InspectorTransformer
 from scripts.tokenizer import BPETokenizer, EOS_IDX, PAD_IDX, SOS_IDX
+from .rcfo import (
+    format_rcfo_validation_error,
+    is_rcfo_candidate,
+    validate_rcfo_structure,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = PROJECT_ROOT / "inspector" / "models" / "inspector_model.pth"
@@ -630,6 +635,7 @@ class InspectorResult:
     max_input_tokens: int
     finished: bool
     stop_reason: str
+    validation: dict | None = None
 
 
 def generate_result(
@@ -712,6 +718,20 @@ def generate_result(
             stop_reason="max_tokens_reached",
         )
 
+    validation = None
+    if is_rcfo_candidate(response):
+        validation = validate_rcfo_structure(response)
+        if not validation["valid"]:
+            return InspectorResult(
+                status="invalid_structure",
+                text=response,
+                input_tokens=input_tokens,
+                max_input_tokens=model_max_len,
+                finished=True,
+                stop_reason="invalid_rcfo_structure",
+                validation=validation,
+            )
+
     return InspectorResult(
         status="ok",
         text=response,
@@ -719,6 +739,7 @@ def generate_result(
         max_input_tokens=model_max_len,
         finished=True,
         stop_reason="eos_reached",
+        validation=validation,
     )
 
 
@@ -729,6 +750,12 @@ def generate_response(
 ) -> str:
     """Backward-compatible string API; raises for non-successful inference."""
     result = generate_result(model, tokenizer, user_input)
+    if result.status == "invalid_structure":
+        detail = format_rcfo_validation_error(result.validation or {})
+        raise ValueError(
+            "Resposta R.C.F.O. rejeitada pelo validador estrutural: "
+            f"{detail}.\\nResposta gerada (para diagnóstico):\\n{result.text}"
+        )
     if result.status != "ok":
         raise ValueError(result.text)
     return result.text
