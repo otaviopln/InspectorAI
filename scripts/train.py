@@ -16,7 +16,6 @@ import json
 import os
 import random
 import shutil
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -24,18 +23,14 @@ import torch
 import torch.nn as nn
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS_DIR = ROOT / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
-
-from tokenizer import (  # noqa: E402
+from scripts.tokenizer import (
     BPETokenizer,
     SOS_IDX,
     EOS_IDX,
     PAD_IDX,
     UNK_IDX,
 )
-from model import InspectorTransformer  # noqa: E402
+from scripts.model import InspectorTransformer
 
 PREPARED_DATASET_PATH = (
     ROOT / "inspector" / "data" / "processed" / "prepared_dataset.json"
@@ -62,17 +57,15 @@ RANDOM_SEED = 42
 EARLY_STOPPING_PATIENCE = 5
 MIN_DELTA = 0.0001
 
-_FORCED_DEVICE = os.environ.get("INSPECTOR_DEVICE", "").strip().lower()
-
-
 def pick_device() -> torch.device:
-    if _FORCED_DEVICE == "cpu":
+    forced_device = os.environ.get("INSPECTOR_DEVICE", "").strip().lower()
+    if forced_device == "cpu":
         return torch.device("cpu")
-    if _FORCED_DEVICE == "cuda":
+    if forced_device == "cuda":
         if not torch.cuda.is_available():
             raise RuntimeError("INSPECTOR_DEVICE=cuda, mas CUDA não está disponível.")
         return torch.device("cuda")
-    if _FORCED_DEVICE == "directml":
+    if forced_device == "directml":
         try:
             import torch_directml  # type: ignore
             return torch_directml.device()
@@ -80,8 +73,6 @@ def pick_device() -> torch.device:
             raise RuntimeError(f"DirectML não está disponível: {exc}") from exc
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
-DEVICE = pick_device()
 
 HASH_ALGORITHM = "sha256-canonical-json-v1"
 
@@ -154,7 +145,8 @@ def load_prepared_dataset(path: Path = PREPARED_DATASET_PATH):
 
     train_pairs = _records_to_pairs(train_records, "train")
     validation_pairs = _records_to_pairs(validation_records, "validation")
-    test_pairs = _records_to_pairs(test_records, "test")
+    if not isinstance(test_records, list) or not test_records:
+        raise ValueError("O split 'test' está vazio ou inválido.")
 
     group_sets = {
         name: {
@@ -170,7 +162,8 @@ def load_prepared_dataset(path: Path = PREPARED_DATASET_PATH):
     if group_sets["validation"] & group_sets["test"]:
         raise ValueError("Vazamento de group_id entre validation e test.")
 
-    return train_pairs, validation_pairs, test_pairs, data
+    # Held-out test data is evaluated only by scripts/evaluate.py.
+    return train_pairs, validation_pairs, data
 
 
 def pad_sequences(
@@ -180,10 +173,17 @@ def pad_sequences(
 ) -> torch.Tensor:
     if max_len < 2:
         raise ValueError("MAX_LEN precisa ser pelo menos 2.")
-    padded: list[list[int]] = []
-    for sequence in sequences:
-        sequence = sequence[:max_len]
-        padded.append(sequence + [pad_value] * (max_len - len(sequence)))
+    if not sequences:
+        raise ValueError("Não é possível aplicar padding a um lote vazio.")
+    if any(len(sequence) > max_len for sequence in sequences):
+        raise ValueError(
+            "Sequência acima de max_len; padding não deve truncar conteúdo."
+        )
+    batch_max_len = max(len(sequence) for sequence in sequences)
+    padded = [
+        sequence + [pad_value] * (batch_max_len - len(sequence))
+        for sequence in sequences
+    ]
     return torch.tensor(padded, dtype=torch.long)
 
 
@@ -230,6 +230,7 @@ def evaluate_loss(
     pairs: list[tuple[str, str]],
     tokenizer: BPETokenizer,
     criterion: nn.Module,
+    device: torch.device,
 ) -> float:
     if not pairs:
         raise ValueError("Não é possível avaliar um conjunto vazio.")
@@ -242,9 +243,9 @@ def evaluate_loss(
         for start in range(0, len(pairs), BATCH_SIZE):
             batch = pairs[start : start + BATCH_SIZE]
             src, tgt_input, tgt_labels = collate_batch(batch, tokenizer)
-            src = src.to(DEVICE)
-            tgt_input = tgt_input.to(DEVICE)
-            tgt_labels = tgt_labels.to(DEVICE)
+            src = src.to(device)
+            tgt_input = tgt_input.to(device)
+            tgt_labels = tgt_labels.to(device)
 
             logits = model(src, tgt_input)
             loss_sum = criterion(
@@ -261,22 +262,22 @@ def evaluate_loss(
 
 
 def main() -> None:
+    device = pick_device()
     random.seed(RANDOM_SEED)
     torch.manual_seed(RANDOM_SEED)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(RANDOM_SEED)
 
-    train_pairs, validation_pairs, test_pairs, dataset_info = load_prepared_dataset()
+    train_pairs, validation_pairs, dataset_info = load_prepared_dataset()
     prepared_dataset_sha256 = _canonical_json_sha256(dataset_info)
 
-    print(f"Device: {DEVICE}")
-    if DEVICE.type == "cuda":
+    print(f"Device: {device}")
+    if device.type == "cuda":
         print(f"GPU: {torch.cuda.get_device_name(0)}")
     print(
         "Examples | "
         f"train={len(train_pairs)} | "
-        f"validation={len(validation_pairs)} | "
-        f"test={len(test_pairs)}"
+        f"validation={len(validation_pairs)}"
     )
     if len(train_pairs) < 400:
         print(
@@ -317,7 +318,7 @@ def main() -> None:
         "max_len": MAX_LEN,
         "pad_idx": PAD_IDX,
     }
-    model = InspectorTransformer(**model_config).to(DEVICE)
+    model = InspectorTransformer(**model_config).to(device)
 
     criterion = nn.CrossEntropyLoss(
         ignore_index=PAD_IDX,
@@ -329,6 +330,7 @@ def main() -> None:
     best_state_dict: dict[str, torch.Tensor] | None = None
     epochs_without_improvement = 0
     rng = random.Random(RANDOM_SEED)
+    history: list[dict[str, float | int]] = []
 
     for epoch in range(1, EPOCHS + 1):
         model.train()
@@ -340,9 +342,9 @@ def main() -> None:
         for start in range(0, len(epoch_pairs), BATCH_SIZE):
             batch = epoch_pairs[start : start + BATCH_SIZE]
             src, tgt_input, tgt_labels = collate_batch(batch, tokenizer)
-            src = src.to(DEVICE)
-            tgt_input = tgt_input.to(DEVICE)
-            tgt_labels = tgt_labels.to(DEVICE)
+            src = src.to(device)
+            tgt_input = tgt_input.to(device)
+            tgt_labels = tgt_labels.to(device)
 
             logits = model(src, tgt_input)
             loss_sum = criterion(
@@ -367,8 +369,14 @@ def main() -> None:
 
         train_loss = total_loss / total_tokens
         validation_loss = evaluate_loss(
-            model, validation_pairs, tokenizer, criterion
+            model, validation_pairs, tokenizer, criterion, device
         )
+        history.append({
+            "epoch": epoch,
+            "train_loss": train_loss,
+            "validation_loss": validation_loss,
+            "learning_rate": optimizer.param_groups[0]["lr"],
+        })
         print(
             f"Epoch {epoch:02d}/{EPOCHS} | "
             f"Train loss: {train_loss:.4f} | "
@@ -403,7 +411,6 @@ def main() -> None:
                     "split_strategy": dataset_info.get("split_strategy"),
                     "train_examples": len(train_pairs),
                     "validation_examples": len(validation_pairs),
-                    "test_examples": len(test_pairs),
                 },
                 "artifact_hashes": artifact_hashes,
             }
@@ -423,9 +430,8 @@ def main() -> None:
     if best_state_dict is None:
         raise RuntimeError("Nenhum checkpoint válido foi produzido.")
 
-    # Restore best validation checkpoint before touching the held-out test set.
+    # Restore the best validation checkpoint. Test evaluation happens separately.
     model.load_state_dict(best_state_dict)
-    test_loss = evaluate_loss(model, test_pairs, tokenizer, criterion)
 
     # Refuse to publish a checkpoint if either source artifact changed
     # while training was running.
@@ -478,12 +484,12 @@ def main() -> None:
 
     metrics = {
         "best_validation_loss": best_validation_loss,
-        "test_loss": test_loss,
         "train_examples": len(train_pairs),
         "validation_examples": len(validation_pairs),
-        "test_examples": len(test_pairs),
-        "device": str(DEVICE),
+        "device": str(device),
         "model_config": model_config,
+        "history": history,
+        "test_evaluation": "Run scripts/evaluate.py after model selection.",
     }
     METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
     with METRICS_PATH.open("w", encoding="utf-8") as stream:
@@ -499,7 +505,7 @@ def main() -> None:
 
     print("\nTraining completed.")
     print(f"Best validation loss: {best_validation_loss:.4f}")
-    print(f"Held-out test loss: {test_loss:.4f}")
+    print("Held-out test was not evaluated during training.")
     print(f"Model: {MODEL_PATH}")
     print(f"Tokenizer: {TOKENIZER_PATH}")
     print(f"Metrics: {METRICS_PATH}")
