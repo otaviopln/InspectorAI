@@ -32,7 +32,7 @@ try:  # ImageTk depende do Tk; o CustomTkinter já exige Pillow + Tk.
 except Exception:  # pragma: no cover
     ImageTk = None
 
-from inspector.engine import generate_response, load_components
+from inspector.engine import generate_result, load_components
 
 
 # ---------------------------------------------------------------------------
@@ -1568,8 +1568,12 @@ class InspectorGUI(ctk.CTk):
 
         def _worker() -> None:
             try:
-                response = generate_response(model, tokenizer, user_text)
-                self._worker_results.put(("response", (response, False)))
+                result = generate_result(model, tokenizer, user_text)
+                response = result.text
+                failed = result.status != "ok"
+                if result.status == "incomplete_generation":
+                    response += "\n\n[Resposta incompleta: o limite de geração foi atingido.]"
+                self._worker_results.put(("response", (response, failed)))
             except Exception as exc:
                 self._worker_results.put(
                     ("response", (f"Ocorreu um erro durante a inferência:\n{exc}", True))
