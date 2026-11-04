@@ -254,3 +254,54 @@ def test_summary_reports_field_and_semantic_screen_metrics():
     assert metrics["rcfo_field_integrity"]["validity_rate"] == 1.0
     assert metrics["annotated_semantic_screen"]["requirement_anchor_coverage"] == 1.0
     assert metrics["human_review_pending"] == 1
+
+
+def test_reported_sql_failure_is_rejected_on_all_relevant_dimensions():
+    record = _record(
+        task="format_rcfo",
+        ambiguity="clear",
+        semantic_checks={
+            "search_sections": ["Context", "Focus", "Output"],
+            "requirements": [
+                {
+                    "id": "requested-sql-query",
+                    "concept_groups": [
+                        ["SQL"],
+                        ["query"],
+                        ["five", "5"],
+                        ["most recent", "latest", "newest"],
+                        ["customer orders", "orders from customers"],
+                    ],
+                }
+            ],
+            "forbidden_phrases": [
+                "Python developer",
+                "Python script",
+                "write an email",
+            ],
+        },
+    )
+    output = (
+        "Decision: FORMAT_RCFO\n"
+        "Role: Data analyst\n"
+        "Context: A Python developer\n"
+        "Context: A Python script that the user story.\n"
+        "Focus: Write an email.\n"
+    )
+
+    score = score_output(record, output)
+    screen = score["semantic_screen"]
+
+    # The decision label alone is not enough to pass evaluation.
+    assert score["decision_correct"] is True
+    assert score["expected_structure_valid"] is False
+    assert score["field_integrity"]["duplicate_fields"] == ["Context"]
+    assert score["field_integrity"]["missing_fields"] == ["Output"]
+    assert screen["requirements_preserved"] == 0
+    assert screen["requirement_coverage"] == 0.0
+    assert screen["forbidden_phrases"] == [
+        "Python developer",
+        "Python script",
+        "write an email",
+    ]
+    assert screen["passed"] is False
