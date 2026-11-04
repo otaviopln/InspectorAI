@@ -229,6 +229,48 @@ def collate_batch(
     )
 
 
+def _percentile(values: list[int], percentile: int) -> int:
+    ordered = sorted(values)
+    if not ordered:
+        return 0
+    index = round((percentile / 100) * (len(ordered) - 1))
+    return ordered[index]
+
+
+def validate_sequence_lengths(
+    pairs: list[tuple[str, str]],
+    tokenizer: BPETokenizer,
+    split_name: str,
+) -> None:
+    """Fail before epoch 1 if any train/validation pair exceeds MAX_LEN."""
+    if not pairs:
+        raise ValueError(f"O conjunto {split_name!r} está vazio.")
+
+    source_lengths = [len(tokenizer.encode(source)) for source, _ in pairs]
+    target_lengths = [len(tokenizer.encode(target)) + 1 for _, target in pairs]
+    print(
+        f"Lengths {split_name} | "
+        f"input p50={_percentile(source_lengths, 50)} "
+        f"p95={_percentile(source_lengths, 95)} max={max(source_lengths)} | "
+        f"target p50={_percentile(target_lengths, 50)} "
+        f"p95={_percentile(target_lengths, 95)} max={max(target_lengths)}"
+    )
+
+    problems = [
+        (index, source_len, target_len)
+        for index, (source_len, target_len) in enumerate(
+            zip(source_lengths, target_lengths)
+        )
+        if source_len > MAX_LEN or target_len > MAX_LEN
+    ]
+    if problems:
+        raise ValueError(
+            f"{len(problems)} exemplos de {split_name} excedem MAX_LEN={MAX_LEN}. "
+            f"Primeiros índices (índice, input_tokens, target_tokens): {problems[:10]}. "
+            "Aumente MAX_LEN ou revise os exemplos; nenhum conteúdo foi truncado."
+        )
+
+
 def evaluate_loss(
     model: InspectorTransformer,
     pairs: list[tuple[str, str]],
@@ -299,6 +341,11 @@ def main() -> None:
         tokenizer_is_staged = True
     else:
         tokenizer = BPETokenizer.load(TOKENIZER_PATH)
+
+    # Measure train/validation lengths with the actual tokenizer before epoch 1.
+    # The held-out test split is intentionally not inspected during training.
+    validate_sequence_lengths(train_pairs, tokenizer, "train")
+    validate_sequence_lengths(validation_pairs, tokenizer, "validation")
 
     tokenizer_artifact_path = (
         STAGING_TOKENIZER_PATH if tokenizer_is_staged else TOKENIZER_PATH
