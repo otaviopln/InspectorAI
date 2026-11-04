@@ -12,7 +12,7 @@ class ClipboardWriteError(RuntimeError):
     """Raised when the response could not be written to the system clipboard."""
 
 
-def _windows_clipboard_write(text: str) -> None:
+def _windows_clipboard_write(text: str, owner_hwnd: int) -> None:
     """Write Unicode text through the Win32 API as a fallback for Tk on Windows."""
     if sys.platform != "win32":
         raise OSError("The Win32 clipboard API is available only on Windows.")
@@ -40,7 +40,7 @@ def _windows_clipboard_write(text: str) -> None:
 
     opened = False
     for attempt in range(5):
-        if user32.OpenClipboard(None):
+        if user32.OpenClipboard(owner_hwnd):
             opened = True
             break
         if attempt < 4:
@@ -90,7 +90,7 @@ def copy_text_to_clipboard(root, text: str) -> None:
     windows_error: Exception | None = None
     if sys.platform == "win32":
         try:
-            _windows_clipboard_write(text)
+            _windows_clipboard_write(text, root.winfo_id())
             return
         except Exception as exc:
             windows_error = exc
