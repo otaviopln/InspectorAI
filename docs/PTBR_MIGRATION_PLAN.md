@@ -51,12 +51,12 @@ O inventário atualizado e as observações de licença ficam em [DATA_SOURCES.m
 
 | Dataset | Papel proposto | Não fazer |
 |---|---|---|
-| GPT4-500k-Augmented-PTBR-Clean | Fonte ampla de instruções e respostas para seleção/adaptação | Não copiar respostas diretamente como alvo do InspectorAI; não aprovar uso comercial antes de fechar a cadeia de origem |
-| OpenAssistant OASST1 | Fonte complementar de conversas humanas em pt-BR | Não tratar cada mensagem como um par independente; não separar mensagens da mesma árvore entre splits |
+| GPT4-500k-Augmented-PTBR-Clean | Apenas perfilamento técnico exploratório enquanto a procedência/licença é investigada | Não usar outputs GPT-4 como alvos ou sinais de treino; há restrições contratuais de uso de outputs para desenvolvimento de modelos concorrentes |
+| OpenAssistant OASST1 | Primeira fonte para perfilamento e possível extração de conversas pt-BR | Filtrar lang=pt, inspecionar synthetic/review_result/deleted e preservar message_tree_id; não tratar toda mensagem como par independente |
 | MASSIVE pt-BR | Sinais auxiliares de intenção e extração de slots/requisitos | Não tratá-lo como corpus de geração R.C.F.O. |
 | IFEval-PT | Benchmark auxiliar de cumprimento de restrições | Não misturar o benchmark reservado para teste ao treinamento |
 
-A primeira fonte a investigar em profundidade é GPT4-500k-PTBR-Clean, mas somente depois da análise de licença e origem. MASSIVE pt-BR deve ser avaliado como recurso de compreensão/slots. IFEval-PT é principalmente avaliação. OASST1 complementa linguagem conversacional, condicionado à contagem real de mensagens pt-BR.
+A primeira fonte a perfilar tecnicamente será OASST1, filtrando as mensagens pt-BR; o card informa 2.969 mensagens brasileiras em um corpus de conversas humanas, mas isso não equivale a 2.969 pares SFT. MASSIVE pt-BR deve ser avaliado como recurso auxiliar de compreensão/slots. IFEval-pt é principalmente avaliação. GPT4-500k pode ser inspecionado para entender schema e qualidade, mas fica bloqueado para treinamento até resolver a questão de uso dos outputs GPT-4 e a cadeia de direitos.
 
 ## 5. Fases de execução
 
@@ -85,7 +85,7 @@ Para cada dataset/versão:
 
 ### Fase 2 — Inspeção e perfil dos dados brutos
 
-Para cada fonte aprovada:
+Para cada fonte em inspeção:
 
 - contar registros por idioma/locale e split;
 - identificar esquema, campos e tipos;
@@ -98,7 +98,18 @@ Para cada fonte aprovada:
 - verificar conteúdo pessoal/sensível;
 - avaliar se o registro é solicitação de usuário, resposta de assistente, rótulo de intenção ou outra modalidade.
 
-Gerar um relatório por fonte antes de qualquer transformação.
+Gerar um relatório por fonte antes de qualquer transformação. O script inicial está disponível em scripts/profile_external_dataset.py. Ele usa streaming, fixa o commit resolvido e salva apenas uma amostra limitada e um relatório no diretório ignorado inspector/data/external/cache/.
+
+Exemplo para OASST1 (filtra o locale pt antes da amostragem):
+
+    python -m pip install datasets huggingface_hub
+    python scripts/profile_external_dataset.py --dataset OpenAssistant/oasst1 --split train --filter-field lang --filter-value pt --sample-size 200 --buffer-size 10000 --seed 42 --output-dir inspector/data/external/cache/oasst1_ptbr
+
+Exemplo de perfil exploratório do GPT4-500k, sem permissão para treinamento:
+
+    python scripts/profile_external_dataset.py --dataset cnmoro/GPT4-500k-Augmented-PTBR-Clean --split train --sample-size 200 --buffer-size 10000 --seed 42
+
+A amostragem é exploratória e não estima com precisão a distribuição de todo o corpus. Para OASST1, o relatório precisa mostrar role, synthetic, review_result, deleted e message_tree_id; para GPT4-500k, deve verificar especialmente respostas vazias.
 
 **Critério de saída:** conhecer o que cada arquivo contém e quais subconjuntos são utilizáveis.
 
