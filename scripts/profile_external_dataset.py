@@ -237,6 +237,8 @@ def main() -> int:
         parser.error("--buffer-size deve ser maior ou igual a --sample-size.")
     if (args.filter_field is None) != (args.filter_value is None):
         parser.error("--filter-field e --filter-value devem ser usados juntos.")
+    if args.count_field and args.filter_field is not None:
+        parser.error("--count-field é uma varredura integral e não pode ser combinado com filtros.")
 
     try:
         from datasets import load_dataset
