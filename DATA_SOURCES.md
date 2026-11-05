@@ -26,7 +26,8 @@ Um dataset só poderá entrar no pipeline depois de:
 | [GPT4-500k-Augmented-PTBR-Clean](https://huggingface.co/datasets/cnmoro/GPT4-500k-Augmented-PTBR-Clean) | MIT | 565.536 registros; instruções e respostas traduzidas para português | Fonte inicial de solicitações e respostas para seleção, normalização e adaptação | **Condicional**: verificar licença e procedência de toda a cadeia de origem |
 | [OpenAssistant OASST1](https://huggingface.co/datasets/OpenAssistant/oasst1) | Apache-2.0 | Conversas humanas multilíngues, organizadas em mensagens/árvores | Fonte complementar para linguagem natural, pedidos e contexto conversacional; filtrar locale pt-BR | **Candidato**: medir volume pt-BR e conferir estrutura/licença no snapshot baixado |
 | [MASSIVE pt-BR](https://huggingface.co/datasets/Magurofg/massive-pt-br) | CC BY 4.0 | Intenções e slots; a página informa 15.807 linhas no viewer | Apoiar classificação de intenção e extração/preservação de entidades e requisitos | **Candidato auxiliar**: atribuição obrigatória; não é dataset de geração R.C.F.O. |
-| [IFEval-PT](https://huggingface.co/datasets/Polygl0t/IFEval-PT) | Apache-2.0 | 300 prompts com instruções verificáveis | Benchmark auxiliar de seguimento de instruções em português | **Candidato para avaliação**, não fonte principal de treinamento |
+| [IFEval-pt](https://huggingface.co/datasets/Magurofg/ifeval-pt) | Apache-2.0 | 308 itens pt-BR; inclui restrições próprias da língua portuguesa verificadas por código | Benchmark auxiliar de seguimento de instruções | **Candidato para avaliação**, não fonte de treinamento |
+| [IFEval-PT](https://huggingface.co/datasets/Polygl0t/IFEval-PT) | Apache-2.0 | 300 prompts traduzidos para português | Benchmark traduzido complementar, após revisão linguística | **Candidato para avaliação**, não fonte de treinamento |
 
 ### 1. GPT4-500k-Augmented-PTBR-Clean
 
@@ -68,17 +69,24 @@ A página declara CC BY 4.0 e descreve uma localização brasileira do split pt-
 - Manter os rótulos e a ligação entre frase e slots; não descartar os valores anotados.
 - Verificar o repositório/procedimento de localização antes de assumir que todas as anotações foram validadas manualmente.
 
-### 4. IFEval-PT
+### 4. IFEval-pt (pt-BR)
 
-A página declara Apache-2.0 e apresenta 300 prompts traduzidos para português, com identificadores de instruções verificáveis e argumentos.
+A página declara Apache-2.0 e descreve 308 itens em português brasileiro, incluindo restrições próprias do idioma, como crase, próclise, ênclise, mesóclise, uso de cedilha e distinção entre por que/porque.
 
-**Uso pretendido:** benchmark auxiliar para verificar cumprimento de restrições explícitas. Não é um conjunto de exemplos de classificação de ambiguidade e não deve ser misturado automaticamente ao treinamento.
+**Uso pretendido:** benchmark auxiliar de seguimento de instruções, com verificações por código. Não é um conjunto de exemplos de classificação de ambiguidade e não deve ser misturado automaticamente ao treinamento.
 
 **Verificações obrigatórias:**
 
-- Confirmar se a variante linguística atende ao padrão pt-BR desejado.
+- Fixar a revisão do dataset usada.
 - Preservar instruction_id_list e kwargs para que as verificações sejam reproduzíveis.
+- Observar limitações estatísticas por restrição: há poucos itens por tipo de regra.
 - Manter esse conjunto fora do treinamento se estiver sendo usado como teste.
+
+### 5. IFEval-PT (Polygl0t, versão traduzida)
+
+A página declara Apache-2.0 e contém 300 prompts traduzidos do benchmark original para português. É uma opção complementar, mas não representa necessariamente restrições específicas do português brasileiro.
+
+**Uso pretendido:** benchmark secundário de instruções traduzidas, após verificar naturalidade e adequação ao pt-BR. Manter separado do IFEval-pt, pois os conjuntos medem aspectos diferentes.
 
 ## Fontes e referências
 
@@ -89,7 +97,8 @@ A página declara Apache-2.0 e apresenta 300 prompts traduzidos para português,
 - [OpenAssistant — FAQ sobre licença dos dados](https://projects.laion.ai/Open-Assistant/docs/faq)
 - [MASSIVE pt-BR — página e dataset card](https://huggingface.co/datasets/Magurofg/massive-pt-br)
 - [MASSIVE original — Amazon Science](https://huggingface.co/datasets/AmazonScience/massive)
-- [IFEval-PT — página e dataset card](https://huggingface.co/datasets/Polygl0t/IFEval-PT)
+- [IFEval-pt pt-BR — página e dataset card](https://huggingface.co/datasets/Magurofg/ifeval-pt)
+- [IFEval-PT traduzido — página e dataset card](https://huggingface.co/datasets/Polygl0t/IFEval-PT)
 - [Texto oficial MIT](https://opensource.org/license/mit)
 - [Texto oficial Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)
 - [Texto oficial Creative Commons Attribution 4.0](https://creativecommons.org/licenses/by/4.0/)
