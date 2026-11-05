@@ -82,6 +82,8 @@ def build_profile(
     split: str,
     seed: int,
     buffer_size: int,
+    filter_field: str | None,
+    filter_value: str | None,
 ) -> dict[str, Any]:
     keys = sorted({str(key) for row in rows for key in row})
     field_stats: dict[str, Any] = {}
@@ -90,7 +92,13 @@ def build_profile(
         values = [row.get(key) for row in rows]
         strings = [value for value in values if isinstance(value, str)]
         lengths = [len(value) for value in strings]
+        non_null = [value for value in values if value is not None]
+        category_counts = Counter(str(value) for value in non_null)
         field_stats[key] = {
+            "category_counts": (
+                dict(category_counts.most_common(30))
+                if len(category_counts) <= 50 else None
+            ),
             "missing_or_null": sum(value is None for value in values),
             "empty_strings": sum(
                 isinstance(value, str) and not value.strip() for value in values
@@ -138,9 +146,13 @@ def build_profile(
         "split": split,
         "sample": {
             "records_inspected": len(rows),
-            "sampling_method": "streaming shuffle with bounded buffer",
+            "sampling_method": "optional exact-value filter, then streaming shuffle with bounded buffer",
             "seed": seed,
             "buffer_size": buffer_size,
+            "filter": (
+                {"field": filter_field, "value": filter_value}
+                if filter_field is not None else None
+            ),
             "note": (
                 "A amostra é exploratória; não representa necessariamente "
                 "a distribuição completa do dataset."
@@ -177,6 +189,14 @@ def main() -> int:
     parser.add_argument("--sample-size", type=int, default=200)
     parser.add_argument("--buffer-size", type=int, default=10_000)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--filter-field",
+        help="Campo a filtrar antes da amostragem, por exemplo lang.",
+    )
+    parser.add_argument(
+        "--filter-value",
+        help="Valor textual exato do campo, por exemplo pt.",
+    )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     args = parser.parse_args()
 
@@ -184,6 +204,8 @@ def main() -> int:
         parser.error("--sample-size precisa ser maior que zero.")
     if args.buffer_size < args.sample_size:
         parser.error("--buffer-size deve ser maior ou igual a --sample-size.")
+    if (args.filter_field is None) != (args.filter_value is None):
+        parser.error("--filter-field e --filter-value devem ser usados juntos.")
 
     try:
         from datasets import load_dataset
@@ -206,6 +228,11 @@ def main() -> int:
         streaming=True,
         revision=resolved_revision,
     )
+    if args.filter_field is not None:
+        field = args.filter_field
+        value = args.filter_value
+        stream = stream.filter(lambda row: str(row.get(field)) == value)
+
     stream = stream.shuffle(seed=args.seed, buffer_size=args.buffer_size)
 
     rows = [json_safe(row) for row in islice(iter(stream), args.sample_size)]
@@ -229,6 +256,8 @@ def main() -> int:
         split=args.split,
         seed=args.seed,
         buffer_size=args.buffer_size,
+        filter_field=args.filter_field,
+        filter_value=args.filter_value,
     )
     profile_path.write_text(
         json.dumps(profile, ensure_ascii=False, indent=2) + "\n",
