@@ -56,7 +56,7 @@ O inventário atualizado e as observações de licença ficam em [DATA_SOURCES.m
 | MASSIVE pt-BR | Sinais auxiliares de intenção e extração de slots/requisitos | Não tratá-lo como corpus de geração R.C.F.O. |
 | IFEval-PT | Benchmark auxiliar de cumprimento de restrições | Não misturar o benchmark reservado para teste ao treinamento |
 
-A primeira fonte a perfilar tecnicamente será OASST1, filtrando as mensagens pt-BR; o card informa 2.969 mensagens brasileiras em um corpus de conversas humanas, mas isso não equivale a 2.969 pares SFT. MASSIVE pt-BR deve ser avaliado como recurso auxiliar de compreensão/slots. IFEval-pt é principalmente avaliação. GPT4-500k pode ser inspecionado para entender schema e qualidade, mas fica bloqueado para treinamento até resolver a questão de uso dos outputs GPT-4 e a cadeia de direitos.
+A primeira fonte a perfilar tecnicamente será OASST1. O card lista 2.969 mensagens brasileiras no corpus completo de 161.443 mensagens, mas o split Parquet ready_for_export usado pelo load_dataset contém 88.838 mensagens (84.437 train e 4.401 validation). A contagem de lang deve ser refeita em cada split; não assumir que as 2.969 estejam todas no subconjunto pronto para SFT. Mensagens também não equivalem a pares SFT. MASSIVE pt-BR deve ser avaliado como recurso auxiliar de compreensão/slots. IFEval-pt é principalmente avaliação. GPT4-500k pode ser inspecionado para entender schema e qualidade, mas fica bloqueado para treinamento até resolver a questão de uso dos outputs GPT-4 e a cadeia de direitos.
 
 ## 5. Fases de execução
 
