@@ -75,6 +75,32 @@ def json_safe(value: Any) -> Any:
     return str(value)
 
 
+def scan_field_values(
+    stream: Any,
+    field: str,
+) -> dict[str, Any]:
+    """Count every value of a field across one streamed split."""
+    counts: Counter[str] = Counter()
+    missing = 0
+    total = 0
+
+    for row in stream:
+        total += 1
+        value = row.get(field)
+        if value is None:
+            missing += 1
+        else:
+            counts[str(value)] += 1
+
+    return {
+        "field": field,
+        "records_scanned": total,
+        "missing_or_null": missing,
+        "value_counts": dict(counts.most_common()),
+        "note": "Contagem integral do split em streaming; nenhum registro foi salvo.",
+    }
+
+
 def build_profile(
     rows: list[dict[str, Any]],
     dataset_id: str,
@@ -190,6 +216,11 @@ def main() -> int:
     parser.add_argument("--buffer-size", type=int, default=10_000)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
+        "--count-field",
+        help="Conta todos os valores de um campo no split inteiro e encerra; "
+        "por exemplo: --count-field lang.",
+    )
+    parser.add_argument(
         "--filter-field",
         help="Campo a filtrar antes da amostragem, por exemplo lang.",
     )
@@ -228,6 +259,33 @@ def main() -> int:
         streaming=True,
         revision=resolved_revision,
     )
+
+    if args.count_field:
+        counts = scan_field_values(stream, args.count_field)
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        counts_path = args.output_dir / f"{args.count_field}_value_counts.json"
+        counts_path.write_text(
+            json.dumps(
+                {
+                    "dataset": args.dataset,
+                    "resolved_revision": resolved_revision,
+                    "split": args.split,
+                    "created_at_utc": datetime.now(timezone.utc).isoformat(),
+                    **counts,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ) + "\\n",
+            encoding="utf-8",
+        )
+        print(f"Registros examinados: {counts['records_scanned']}")
+        print(f"Valores de {args.count_field}:")
+        for value, count in counts["value_counts"].items():
+            print(f"  {value}: {count}")
+        print(f"Ausentes: {counts['missing_or_null']}")
+        print(f"Relatório: {counts_path}")
+        return 0
+
     if args.filter_field is not None:
         field = args.filter_field
         value = args.filter_value
