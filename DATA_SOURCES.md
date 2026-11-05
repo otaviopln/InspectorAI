@@ -23,19 +23,21 @@ Um dataset só poderá entrar no pipeline depois de:
 
 | Fonte | Licença declarada na página consultada | Conteúdo / tamanho indicado | Uso proposto | Estado |
 |---|---|---|---|---|
-| [GPT4-500k-Augmented-PTBR-Clean](https://huggingface.co/datasets/cnmoro/GPT4-500k-Augmented-PTBR-Clean) | MIT | 565.536 registros; instruções e respostas traduzidas para português | Fonte inicial de solicitações e respostas para seleção, normalização e adaptação | **Condicional**: verificar licença e procedência de toda a cadeia de origem |
-| [OpenAssistant OASST1](https://huggingface.co/datasets/OpenAssistant/oasst1) | Apache-2.0 | Conversas humanas multilíngues, organizadas em mensagens/árvores | Fonte complementar para linguagem natural, pedidos e contexto conversacional; filtrar locale pt-BR | **Candidato**: medir volume pt-BR e conferir estrutura/licença no snapshot baixado |
+| [GPT4-500k-Augmented-PTBR-Clean](https://huggingface.co/datasets/cnmoro/GPT4-500k-Augmented-PTBR-Clean) | MIT declarado na página | 565.536 registros; instruções e respostas traduzidas para português | Somente perfilamento exploratório enquanto a origem/licença é investigada | **Bloqueado para treinamento** até revisão específica dos outputs GPT-4 e da cadeia de direitos |
+| [OpenAssistant OASST1](https://huggingface.co/datasets/OpenAssistant/oasst1) | Apache-2.0 declarado na página | 161.443 mensagens totais; 2.969 mensagens em português (Brasil), segundo o card | Primeira fonte para perfilamento de mensagens pt-BR, qualidade, papéis e árvores de conversa | **Candidato prioritário para inspeção**; filtrar lang=pt e revisar synthetic/review_result/deleted |
 | [MASSIVE pt-BR](https://huggingface.co/datasets/Magurofg/massive-pt-br) | CC BY 4.0 | Intenções e slots; a página informa 15.807 linhas no viewer | Apoiar classificação de intenção e extração/preservação de entidades e requisitos | **Candidato auxiliar**: atribuição obrigatória; não é dataset de geração R.C.F.O. |
 | [IFEval-pt](https://huggingface.co/datasets/Magurofg/ifeval-pt) | Apache-2.0 | 308 itens pt-BR; inclui restrições próprias da língua portuguesa verificadas por código | Benchmark auxiliar de seguimento de instruções | **Candidato para avaliação**, não fonte de treinamento |
 | [IFEval-PT](https://huggingface.co/datasets/Polygl0t/IFEval-PT) | Apache-2.0 | 300 prompts traduzidos para português | Benchmark traduzido complementar, após revisão linguística | **Candidato para avaliação**, não fonte de treinamento |
 
 ### 1. GPT4-500k-Augmented-PTBR-Clean
 
-A página declara licença MIT, 565.536 linhas e descreve o conjunto como uma versão traduzida de Open-Orca/1million-gpt-4. Também informa que tarefas de programação e exemplos com caracteres não latinos foram removidos.
+A página declara licença MIT, 565.536 linhas e descreve o conjunto como uma versão traduzida de Open-Orca/1million-gpt-4. Também informa que tarefas de programação e exemplos com caracteres não latinos foram removidos. A página informa que o campo response pode ter comprimento mínimo zero; portanto, respostas vazias precisam ser contadas e tratadas.
 
 **Uso pretendido:** selecionar instruções e respostas úteis como matéria-prima para criar exemplos específicos do InspectorAI. Não copiar cegamente o campo de resposta como alvo R.C.F.O. ou CLARIFY.
 
 **Verificações bloqueantes:**
+
+- Open-Orca descreve o conjunto de origem como instruções FLAN aumentadas com completions GPT-4/GPT-3.5. Como o InspectorAI é um modelo próprio, há uma questão contratual relevante: os Termos de Uso da OpenAI em vigor na data desta revisão restringem o uso de outputs para desenvolver modelos que concorram com os da OpenAI. A licença MIT declarada pelo publicador não resolve, por si só, essa questão. Não usar respostas GPT-4 como alvos, nem selecionar/transformar essas respostas para treino, até obter uma revisão jurídica/contratual adequada. Esta pendência não impede apenas o perfilamento técnico da estrutura para fins exploratórios.
 
 - Salvar a versão/commit, o README e a licença do dataset derivado.
 - Examinar a licença, a descrição e a proveniência do Open-Orca/1million-gpt-4, inclusive os subdatasets FLAN mencionados pelo projeto Open-Orca.
@@ -45,14 +47,16 @@ A página declara licença MIT, 565.536 linhas e descreve o conjunto como uma ve
 
 ### 2. OpenAssistant OASST1
 
-A página do dataset declara Apache-2.0 e descreve um corpus multilíngue de conversas humanas.
+A página do dataset declara Apache-2.0 e descreve um corpus de 161.443 mensagens geradas por pessoas e anotadas por pessoas, em 35 idiomas. O card informa 2.969 mensagens em português (Brasil). O esquema inclui role, lang, review_result, deleted, synthetic, parent_id e message_tree_id.
 
 **Uso pretendido:** obter exemplos reais de formulação de pedidos e respostas em conversação. Usar somente mensagens em português brasileiro confirmadas pelos metadados; não inferir locale a partir de palavras isoladas.
 
 **Verificações obrigatórias:**
 
-- Contar mensagens, conversas/árvores e pares utilizáveis em pt-BR no snapshot escolhido.
-- Diferenciar mensagens de usuário e assistente, respostas alternativas, mensagens sinalizadas e registros sem pai/contexto.
+- Filtrar inicialmente lang=pt (locale descrito pelo card como Português (Brazil)); confirmar a distribuição no snapshot.
+- Contar mensagens e árvores utilizáveis em pt-BR; não confundir número de mensagens com número de pares de conversa.
+- Separar role=prompter e role=assistant; contar synthetic, review_result e deleted antes de definir elegibilidade.
+- Diferenciar respostas alternativas, mensagens sinalizadas e registros sem pai/contexto.
 - Preservar o identificador da conversa/árvore para impedir que mensagens correlatas apareçam em splits diferentes.
 - Não converter uma resposta conversacional em alvo do InspectorAI sem adaptação e validação.
 
