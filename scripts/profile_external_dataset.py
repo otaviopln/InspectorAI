@@ -277,7 +277,7 @@ def main() -> int:
                 },
                 ensure_ascii=False,
                 indent=2,
-            ) + "\\n",
+            ) + chr(10),
             encoding="utf-8",
         )
         print(f"Registros examinados: {counts['records_scanned']}")
