@@ -48,3 +48,7 @@ logs/
 
 # OS
 Thumbs.db
+
+# External datasets and local processing caches (never commit source dumps)
+inspector/data/external/raw/
+inspector/data/external/cache/
