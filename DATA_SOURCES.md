@@ -24,7 +24,7 @@ Um dataset só poderá entrar no pipeline depois de:
 | Fonte | Licença declarada na página consultada | Conteúdo / tamanho indicado | Uso proposto | Estado |
 |---|---|---|---|---|
 | [GPT4-500k-Augmented-PTBR-Clean](https://huggingface.co/datasets/cnmoro/GPT4-500k-Augmented-PTBR-Clean) | MIT declarado na página | 565.536 registros; instruções e respostas traduzidas para português | Somente perfilamento exploratório enquanto a origem/licença é investigada | **Bloqueado para treinamento** até revisão específica dos outputs GPT-4 e da cadeia de direitos |
-| [OpenAssistant OASST1](https://huggingface.co/datasets/OpenAssistant/oasst1) | Apache-2.0 declarado na página | 161.443 mensagens totais; 2.969 mensagens em português (Brasil), segundo o card | Primeira fonte para perfilamento de mensagens pt-BR, qualidade, papéis e árvores de conversa | **Candidato prioritário para inspeção**; filtrar lang=pt e revisar synthetic/review_result/deleted |
+| [OpenAssistant OASST1](https://huggingface.co/datasets/OpenAssistant/oasst1) | Apache-2.0 declarado na página | 161.443 mensagens no corpus completo; o card lista 2.969 em português (Brasil); o split HF ready-for-export tem 88.838 mensagens no total | Primeira fonte para perfilamento de mensagens pt-BR, qualidade, papéis e árvores de conversa | **Candidato prioritário para inspeção**; filtrar lang=pt e revisar synthetic/review_result/deleted |
 | [MASSIVE pt-BR](https://huggingface.co/datasets/Magurofg/massive-pt-br) | CC BY 4.0 | Intenções e slots; a página informa 15.807 linhas no viewer | Apoiar classificação de intenção e extração/preservação de entidades e requisitos | **Candidato auxiliar**: atribuição obrigatória; não é dataset de geração R.C.F.O. |
 | [IFEval-pt](https://huggingface.co/datasets/Magurofg/ifeval-pt) | Apache-2.0 | 308 itens pt-BR; inclui restrições próprias da língua portuguesa verificadas por código | Benchmark auxiliar de seguimento de instruções | **Candidato para avaliação**, não fonte de treinamento |
 | [IFEval-PT](https://huggingface.co/datasets/Polygl0t/IFEval-PT) | Apache-2.0 | 300 prompts traduzidos para português | Benchmark traduzido complementar, após revisão linguística | **Candidato para avaliação**, não fonte de treinamento |
@@ -47,13 +47,13 @@ A página declara licença MIT, 565.536 linhas e descreve o conjunto como uma ve
 
 ### 2. OpenAssistant OASST1
 
-A página do dataset declara Apache-2.0 e descreve um corpus de 161.443 mensagens geradas por pessoas e anotadas por pessoas, em 35 idiomas. O card informa 2.969 mensagens em português (Brasil). O esquema inclui role, lang, review_result, deleted, synthetic, parent_id e message_tree_id.
+A página do dataset declara Apache-2.0 e descreve o corpus completo com 161.443 mensagens em 35 idiomas; a distribuição publicada lista 2.969 mensagens em português (Brasil). Atenção: a tabela Parquet usada por load_dataset expõe o subconjunto ready_for_export, com 88.838 mensagens divididas em train (84.437) e validation (4.401). A distribuição de idiomas precisa ser contada novamente nesses splits; não presumir que as 2.969 mensagens estejam todas neles. O esquema inclui role, lang, review_result, deleted, synthetic, parent_id e message_tree_id.
 
 **Uso pretendido:** obter exemplos reais de formulação de pedidos e respostas em conversação. Usar somente mensagens em português brasileiro confirmadas pelos metadados; não inferir locale a partir de palavras isoladas.
 
 **Verificações obrigatórias:**
 
-- Filtrar inicialmente lang=pt (locale descrito pelo card como Português (Brazil)); confirmar a distribuição no snapshot.
+- Contar todos os valores do campo lang nos splits train e validation antes de filtrar; não assumir que o total de 2.969 do corpus completo esteja presente no subconjunto ready_for_export.
 - Contar mensagens e árvores utilizáveis em pt-BR; não confundir número de mensagens com número de pares de conversa.
 - Separar role=prompter e role=assistant; contar synthetic, review_result e deleted antes de definir elegibilidade.
 - Diferenciar respostas alternativas, mensagens sinalizadas e registros sem pai/contexto.
